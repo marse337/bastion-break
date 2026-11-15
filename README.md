@@ -161,6 +161,7 @@ Roguelite flags:
 - `--protocol=purge --hunter-at=SEC`: release the Hunter Warden after SEC seconds instead of 45.
 - `--scrap=N`, `--gadgets` (two of each), `--craft` (open the workbench at the start): crafting tests.
 - `--goto=pod|hunterview`: stand at a rocket pod, or somewhere with a view of the elevator.
+- `--goto=cage --spring-lockin`: watch a Hound lock-in from inside the room; it springs 1.5 s in.
 - `--debug-hunter`: print the Hunter's state twice a second, plus every on-screen message (works with `--headless`).
 - `--cell`: open the Cell shop.
 - `--perk`: open the perk terminal.

@@ -196,9 +196,15 @@ func build(level: Dictionary) -> void:
 	range_data = level.get("range", {})
 	for spec in level.get("lockins", []):
 		var nodes := []
+		var caged := []
 		for t in spec.cages:
 			nodes.append(_make_sprite("cage", Vector2(t.x + 0.5, t.y + 0.5)))
-		lockins.append({"rect": spec.rect, "cages": spec.cages, "nodes": nodes, "state": 0, "t": 0.0})
+			# A Hound pacing behind the bars until the lock-in springs.
+			var hs := _make_sprite("cage", Vector2(t.x + 0.5, t.y + 0.5))
+			hs.texture = Tex.enemy("hound", "stand", 0, 0)
+			hs.pixel_size = 1.0 / hs.texture.get_height()
+			caged.append(hs)
+		lockins.append({"rect": spec.rect, "cages": spec.cages, "nodes": nodes, "caged": caged, "state": 0, "t": 0.0, "open_t": 0.0})
 	if crimson != null:
 		Game.message.emit("A BOUNTY WARDEN guards this floor (skull on the map)")
 	hunt_field.resize(width * height)
@@ -1022,6 +1028,23 @@ func debug_goto(what: String) -> bool:
 	var target := Vector2i(-1, -1)
 	var dir := Vector2i.ZERO
 	match what:
+		"cage":
+			# Inside a lock-in room, 2-4 tiles from a cage, looking at it.
+			if lockins.is_empty():
+				return false
+			var li: Dictionary = lockins[0]
+			var cg: Vector2 = Vector2(li.cages[0]) + Vector2(0.5, 0.5)
+			var r: Rect2i = li.rect
+			for y in range(r.position.y, r.end.y):
+				for x in range(r.position.x, r.end.x):
+					var q := Vector2i(x, y)
+					var qc := Vector2(q) + Vector2(0.5, 0.5)
+					var dd := qc.distance_to(cg)
+					if dd >= 2.5 and dd <= 4.0 and blockers[_i(q)] == 0 and has_los(qc, cg):
+						player.pos = qc
+						player.angle = (cg - qc).angle()
+						return true
+			return false
 		"hunterview":
 			# A spot 4-7 tiles from the elevator with a clear view of it.
 			var st := Vector2i(floori(start_pos.x), floori(start_pos.y))
@@ -1326,6 +1349,10 @@ func _trigger_lockin(li: Dictionary) -> void:
 		if d.key == "":
 			d.unlocked = false
 			d.close()
+	for hs in li.caged:
+		hs.queue_free()
+	li.caged.clear()
+	li.open_t = 0.0
 	for k in li.cages.size():
 		var t: Vector2i = li.cages[k]
 		li.nodes[k].texture = Tex.tex("cage_open")
@@ -1344,6 +1371,12 @@ func _trigger_lockin(li: Dictionary) -> void:
 
 func _tick_lockins(delta: float) -> void:
 	for li in lockins:
+		if li.state == 0:
+			_tick_caged(li)
+			if Game.level_time > 1.5 and "--spring-lockin" in OS.get_cmdline_user_args():
+				_trigger_lockin(li)
+			continue
+		_tick_open_cages(li, delta)
 		if li.state != 1:
 			continue
 		li.t -= delta
@@ -1355,6 +1388,37 @@ func _tick_lockins(delta: float) -> void:
 			_field_timer = 0.0
 			play_sfx("key")
 			Game.message.emit("The lock-in ends - the doors unseal")
+
+
+## Caged Hounds face Rook, snarl now and then, and are drawn a little
+## behind the cage so the front bars stay in front of them.
+func _tick_caged(li: Dictionary) -> void:
+	for k in li.caged.size():
+		var hs: Sprite3D = li.caged[k]
+		var t: Vector2i = li.cages[k]
+		var c := Vector2(t.x + 0.5, t.y + 0.5)
+		var away := (c - player.pos).normalized()
+		hs.position = Vector3(c.x + away.x * 0.12, 0.5, c.y + away.y * 0.12)
+		var phase := fmod(Game.level_time * 0.8 + k * 0.37, 1.0)
+		hs.texture = Tex.enemy("hound", "aim" if phase > 0.75 else "stand", 0, 0)
+
+
+## Once a Hound has run out of its open cage, the empty cage is removed.
+func _tick_open_cages(li: Dictionary, delta: float) -> void:
+	li.open_t += delta
+	for k in li.nodes.size():
+		var node = li.nodes[k]
+		if node == null or not is_instance_valid(node):
+			continue
+		var t: Vector2i = li.cages[k]
+		var occupied := false
+		for e in enemies:
+			if e.is_alive() and (e.tile == t or Vector2i(floori(e.pos.x), floori(e.pos.y)) == t):
+				occupied = true
+		if not occupied and li.open_t > 0.3:
+			_spark(Vector2(t.x + 0.5, t.y + 0.5))
+			node.queue_free()
+			li.nodes[k] = null
 
 
 func damage_player(n: int) -> void:
