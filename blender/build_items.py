@@ -315,6 +315,75 @@ def arc_spark(frame):
     return build
 
 
+def rocket():
+    """A breach rocket in flight: olive body, red warhead, a bright exhaust."""
+    def build():
+        r = empty("root")
+        body = mat("rbody", (0.28, 0.32, 0.2), metal=0.4, rough=0.5)
+        head = mat("rhead", (0.75, 0.1, 0.06), metal=0.4, rough=0.4)
+        ball("flame", 0.13, (0, 0, 0.5), glow("rflame", (1.0, 0.35, 0.05), 3))
+        ball("core", 0.05, (0, -0.14, 0.5), glow("rcore", (1.0, 0.85, 0.5), 5))
+        cyl("body", 0.06, 0.12, (0, 0.12, 0.5), body, axis="Y")
+        ball("tip", 0.06, (0, 0.19, 0.5), head, scale=(1, 1.4, 1))
+        for k in range(4):
+            a = k * math.pi / 2 + math.pi / 4
+            box("fin", (0.02, 0.06, 0.08), (math.cos(a) * 0.07, 0.08, 0.5 + math.sin(a) * 0.07), body, rot=(0, -a, 0))
+    return build
+
+
+def mine(armed=True):
+    def build():
+        r = _root(tilt=60, scale=1.5)
+        steel = mat("msteel", (0.2, 0.21, 0.23), metal=0.8, rough=0.35)
+        stripe = mat("mstripe", (0.9, 0.65, 0.08), rough=0.5)
+        cyl("disc", 0.13, 0.04, (0, 0, 0.02), steel, r, verts=24)
+        cyl("ring", 0.135, 0.012, (0, 0, 0.04), stripe, r, verts=24)
+        cyl("cap", 0.05, 0.03, (0, 0, 0.055), steel, r, verts=16)
+        ball("led", 0.022, (0, 0, 0.075), glow("mled", (0.3, 0.8, 1.0) if armed else (0.2, 0.2, 0.2), 8 if armed else 0.2), r)
+        for k in range(6):
+            a = k * math.tau / 6
+            cyl("prong", 0.008, 0.05, (math.cos(a) * 0.1, math.sin(a) * 0.1, 0.06), steel, r, verts=6)
+    return build
+
+
+def scrap():
+    """Salvage: a strapped bundle of bolts, a cog and a wire coil."""
+    r = _root(tilt=25, scale=1.5)
+    steel = mat("ssteel", (0.5, 0.52, 0.55), metal=0.9, rough=0.35, noise=0.25, noise_scale=25)
+    rust = mat("srust", (0.5, 0.25, 0.1), metal=0.4, rough=0.7)
+    copper = mat("scopper", (0.85, 0.45, 0.2), metal=1.0, rough=0.3)
+    cyl("cog", 0.07, 0.025, (-0.05, 0, 0.04), steel, r, verts=12)
+    for k in range(12):
+        a = k * math.tau / 12
+        box("tooth", (0.02, 0.02, 0.025), (-0.05 + math.cos(a) * 0.075, math.sin(a) * 0.075, 0.04), steel, r, rot=(0, 0, a))
+    for i in range(3):
+        cyl("bolt", 0.012, 0.11, (0.06, -0.04 + i * 0.035, 0.03 + i * 0.01), rust if i % 2 else steel, r, axis="X", verts=8)
+    torus("coil", 0.04, 0.012, (0.03, 0.06, 0.06), copper, r)
+
+
+def brace():
+    """Door brace: a steel bar with two hazard-striped clamps."""
+    r = _root(tilt=15, scale=1.3)
+    steel = mat("bsteel", (0.45, 0.47, 0.5), metal=0.9, rough=0.3)
+    stripe = mat("bstripe", (0.9, 0.62, 0.08), rough=0.5)
+    blk = mat("bblk", (0.03, 0.03, 0.03), rough=0.6)
+    box("bar", (0.32, 0.04, 0.04), (0, 0, 0.08), steel, r, bevel=0.008)
+    for x in (-0.15, 0.15):
+        box("clamp", (0.05, 0.07, 0.1), (x, 0, 0.08), stripe, r, bevel=0.01)
+        box("jaw", (0.052, 0.072, 0.025), (x, 0, 0.05), blk, r)
+
+
+def launcher():
+    """The crafted breach rocket in its single-shot tube (craft card icon)."""
+    r = _root(tilt=10, scale=1.25)
+    tube = mat("ltube", (0.25, 0.3, 0.18), metal=0.4, rough=0.55)
+    head = mat("lhead", (0.75, 0.1, 0.06), metal=0.4, rough=0.4)
+    cyl("tube", 0.045, 0.34, (0, 0, 0.08), tube, r, axis="X", verts=20)
+    ball("warhead", 0.05, (0.19, 0, 0.08), head, r, scale=(1.5, 1, 1))
+    box("grip", (0.03, 0.03, 0.07), (-0.02, 0, 0.03), mat("lgrip", (0.05, 0.05, 0.05), rough=0.6), r)
+    box("sight", (0.05, 0.02, 0.03), (0.0, 0, 0.13), mat("lsight", (0.1, 0.1, 0.1), metal=0.8), r)
+
+
 BUILDERS = {
     "ammo": ammo, "clip": clip, "medkit": medkit, "food": food, "gem": gem, "idol": idol,
     "life": life, "rifle": rifle_item, "rotary": rotary_item,
@@ -325,6 +394,7 @@ BUILDERS = {
     "cage": cage(False), "cage_open": cage(True),
     "target_foe": target(True), "target_hostage": target(False),
     "arc_0": arc_spark(0), "arc_1": arc_spark(1),
+    "rocket": rocket(), "mine": mine(True), "scrap": scrap, "brace": brace, "launcher": launcher,
 }
 
 

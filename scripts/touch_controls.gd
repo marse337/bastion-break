@@ -17,6 +17,13 @@ const FIRE_BTN := {"c": Vector2(428, 186), "r": 28.0, "label": "FIRE"}
 const USE_BTN := {"c": Vector2(364, 206), "r": 18.0, "label": "USE"}
 const SWAP_BTN := {"c": Vector2(440, 124), "r": 16.0, "label": "SWAP"}
 const PAUSE_BTN := {"c": Vector2(16, 14), "r": 11.0, "label": "II"}
+# Purge Protocol: the workbench, and one button per gadget you carry.
+const CRAFT_BTN := {"c": Vector2(396, 106), "r": 14.0, "label": "CRAFT", "key": KEY_C}
+const GADGET_BTNS := {
+	"rocket": {"c": Vector2(398, 140), "r": 13.0, "label": "RKT", "key": KEY_R},
+	"mine": {"c": Vector2(364, 160), "r": 13.0, "label": "MINE", "key": KEY_F},
+	"brace": {"c": Vector2(330, 180), "r": 13.0, "label": "BRACE", "key": KEY_B},
+}
 const FULL_BTN := {"c": Vector2(44, 14), "r": 11.0, "label": "[ ]"}
 const MAP_RECT := Rect2(352, 4, 124, 84)
 
@@ -104,6 +111,9 @@ func _touch_down(i: int, p: Vector2) -> void:
 		_touches[i] = ""
 		var full := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if full else DisplayServer.WINDOW_MODE_FULLSCREEN)
+	elif Game.is_protocol("purge") and _purge_button(p) != 0:
+		_touches[i] = ""
+		_key(_purge_button(p))
 	elif _hit(FIRE_BTN, p, 10.0):
 		_touches[i] = "fire"
 		Input.action_press("fire")
@@ -124,6 +134,16 @@ func _touch_down(i: int, p: Vector2) -> void:
 	else:
 		_touches[i] = "look"
 		_look_last = p
+
+
+## Key for the purge button under `p`, or 0.
+func _purge_button(p: Vector2) -> int:
+	if _hit(CRAFT_BTN, p, 3.0):
+		return CRAFT_BTN.key
+	for id in GADGET_BTNS:
+		if int(Game.gadgets.get(id, 0)) > 0 and _hit(GADGET_BTNS[id], p, 3.0):
+			return GADGET_BTNS[id].key
+	return 0
 
 
 func _touch_move(i: int, p: Vector2, rel: Vector2) -> void:
@@ -230,6 +250,10 @@ func _build_menu() -> void:
 		"perk":
 			for n in main.perk_choices.size():
 				items.append(["PICK %d" % (n + 1), KEY_1 + n])
+		"craft":
+			for n in Game.GADGET_ORDER.size():
+				items.append(["CRAFT %d" % (n + 1), KEY_1 + n])
+			items.append(["BACK", KEY_C])
 		"paused":
 			items = [["RESUME", KEY_ESCAPE], ["QUIT RUN", KEY_Q], ["PIXELS", KEY_F2]]
 		"tally", "runover", "gameover", "victory":
@@ -275,6 +299,11 @@ func _draw_play(font: Font) -> void:
 	_button(font, PAUSE_BTN, false, Color(0.3, 0.3, 0.35))
 	if OS.has_feature("web"):
 		_button(font, FULL_BTN, false, Color(0.3, 0.3, 0.35))
+	if Game.is_protocol("purge"):
+		_button(font, CRAFT_BTN, false, Color(0.75, 0.55, 0.1))
+		for id in GADGET_BTNS:
+			if int(Game.gadgets.get(id, 0)) > 0:
+				_button(font, GADGET_BTNS[id], false, Color(0.55, 0.3, 0.1))
 	if _has_role("stick", "stick"):
 		draw_circle(_stick_origin, STICK_R, Color(1, 1, 1, 0.12))
 		draw_arc(_stick_origin, STICK_R, 0, TAU, 32, Color(1, 1, 1, 0.35), 1.5)

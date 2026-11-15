@@ -266,6 +266,27 @@ def _range():
     _label("CALIBRATE", (0.5, 0.8, 0.1), 0.075, glow("rlabel", (0.95, 0.85, 0.6), 1.5))
 
 
+def _pod(spent):
+    """Captured rocket pod: a wall rack with one big tube and a fire switch."""
+    _metal_base()
+    frame = mat("frame", (0.22, 0.24, 0.2), metal=0.7, rough=0.4)
+    stripe = mat("stripe", (0.9, 0.62, 0.08), rough=0.5)
+    blk = mat("blk", (0.02, 0.02, 0.02), rough=0.6)
+    box("rack", (0.8, 0.5, 0.07), (0.5, 0.58, 0.05), frame, bevel=0.02)
+    for i in range(7):
+        box("hazard", (0.08, 0.06, 0.01), (0.16 + i * 0.113, 0.3, 0.09), stripe if i % 2 == 0 else blk)
+    bpy.ops.mesh.primitive_cylinder_add(radius=0.15, depth=0.12, location=(0.5, 0.6, 0.12))
+    bpy.context.active_object.data.materials.append(mat("tube", (0.3, 0.33, 0.24), metal=0.5, rough=0.5))
+    bpy.ops.mesh.primitive_cylinder_add(radius=0.12, depth=0.02, location=(0.5, 0.6, 0.18))
+    bpy.context.active_object.data.materials.append(blk)
+    if not spent:
+        ball("warhead", 0.1, (0.5, 0.6, 0.17), mat("warhead", (0.8, 0.1, 0.06), metal=0.4, rough=0.35), scale=(1, 1, 0.6))
+    lamp = glow("podlamp", (0.2, 1.0, 0.3) if not spent else (0.5, 0.05, 0.03), 4.0 if not spent else 0.6)
+    for x in (0.2, 0.8):
+        ball("lamp", 0.035, (x, 0.78, 0.1), lamp)
+    _label("SPENT" if spent else "ROCKET POD", (0.5, 0.14, 0.1), 0.06, glow("plabel", (0.95, 0.85, 0.6), 1.5))
+
+
 BUILDERS = {
     "stone": lambda: _stone(),
     "metal": _metal_base,
@@ -292,6 +313,8 @@ BUILDERS = {
     "breaker_gold_on": lambda: _breaker((1.0, 0.72, 0.08), True),
     "locker": _locker,
     "range": _range,
+    "pod": lambda: _pod(False),
+    "pod_empty": lambda: _pod(True),
 }
 
 

@@ -149,6 +149,10 @@ func _setup_input() -> void:
 	_bind("weapon_4", [KEY_4])
 	_bind("pause", [KEY_ESCAPE, KEY_P])
 	_bind("confirm", [KEY_ENTER, KEY_KP_ENTER])
+	_bind("craft", [KEY_C])
+	_bind("gadget_rocket", [KEY_R])
+	_bind("gadget_mine", [KEY_F])
+	_bind("gadget_brace", [KEY_B])
 
 
 func _bind(action: String, keys: Array, buttons: Array = []) -> void:
@@ -335,6 +339,13 @@ func load_level() -> void:
 			world.player.pos = Vector2(float(p[0]), float(p[1]))
 			world.player.angle = deg_to_rad(float(p[2]))
 	for a in _args:
+		if a.begins_with("--scrap="):
+			Game.scrap = int(a.substr(8))
+		elif a == "--gadgets":
+			Game.gadgets = {"rocket": 2, "mine": 2, "brace": 2}
+		elif a == "--craft":
+			_open_craft.call_deferred()
+	for a in _args:
 		if a.begins_with("--goto="):
 			print("goto ", a.substr(7), ": ", world.debug_goto(a.substr(7)))
 	if "--quit" in _args and shot_path == "":
@@ -518,7 +529,14 @@ func _process(delta: float) -> void:
 				tp[1] = 0.05
 	match state:
 		"playing":
-			world.tick(delta)
+			if Game.is_protocol("purge") and Input.is_action_just_pressed("craft"):
+				_open_craft()
+			else:
+				if Game.is_protocol("purge"):
+					for id in Game.GADGET_ORDER:
+						if Input.is_action_just_pressed("gadget_" + id):
+							world.use_gadget(id)
+				world.tick(delta)
 		"dying":
 			world.tick(delta)
 			death_timer -= delta
@@ -637,6 +655,11 @@ func _input(event: InputEvent) -> void:
 		"perk":
 			if num >= 0:
 				_pick_perk(num)
+		"craft":
+			if num >= 0 and num < Game.GADGET_ORDER.size():
+				_craft(num)
+			elif event.is_action_pressed("pause") or event.is_action_pressed("craft"):
+				_close_craft()
 		"playing":
 			if event.is_action_pressed("pause"):
 				state = "paused"
@@ -669,6 +692,54 @@ func _input(event: InputEvent) -> void:
 					show_cell()
 				else:
 					show_title()
+
+
+# ---------------------------------------------------------------- purge workbench
+
+func _open_craft() -> void:
+	state = "craft"
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_show_craft()
+	if not hud.craft_cards.picked.is_connected(_on_craft_card):
+		hud.craft_cards.picked.connect(_on_craft_card)
+
+
+func _show_craft() -> void:
+	var foot := "" if TouchControls.active else "1-3 or click: craft     C / Esc: back to the hunt"
+	hud.show_craft("Scrap: %d      (guards drop scrap when they die)" % Game.scrap, foot)
+
+
+func _craft(i: int) -> void:
+	var id: String = Game.GADGET_ORDER[i]
+	if Game.craft(id):
+		play_sfx("craft")
+		hud.show_message("Crafted a %s" % Game.GADGETS[id][0])
+	else:
+		play_sfx("denied")
+	_show_craft()
+
+
+func _on_craft_card(i: int) -> void:
+	if state == "craft":
+		_craft(i)
+
+
+func _close_craft() -> void:
+	state = "playing"
+	hud.hide_screen()
+	_capture_mouse()
+
+
+## A non-positional sound at a set volume (the Hunter's footsteps).
+func play_sfx_db(sfx_name: String, db: float) -> void:
+	if not sounds.has(sfx_name):
+		return
+	var p := AudioStreamPlayer.new()
+	p.stream = sounds[sfx_name]
+	p.volume_db = db
+	add_child(p)
+	p.finished.connect(p.queue_free)
+	p.play()
 
 
 func play_sfx(sfx_name: String, at = null) -> void:

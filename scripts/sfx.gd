@@ -11,6 +11,7 @@ const KINDS := [
 	"slugger", "nail", "arc", "baton", "alarm", "vent",
 	"chime_r", "chime_b", "chime_g",
 	"chime_rbg", "chime_rgb", "chime_brg", "chime_bgr", "chime_grb", "chime_gbr",
+	"siren", "stomp", "bash", "door_break", "rocket", "mine", "stun", "brace", "clank", "hunter_roar", "craft",
 ]
 const CHIME_HZ := {"r": 523.0, "b": 659.0, "g": 880.0}
 
@@ -48,6 +49,17 @@ static func make(kind: String) -> AudioStreamWAV:
 		"baton": s = _rumble(rng, 0.16, 120.0, 0.6)
 		"alarm": s = _arp([880.0, 660.0, 880.0, 660.0, 880.0, 660.0], 0.12, 0.3)
 		"vent": s = _rumble(rng, 1.3, 260.0, 0.35)
+		"siren": s = _siren(2.4)
+		"stomp": s = _shot(rng, 0.3, 38.0, 1.0, true)
+		"bash": s = _shot(rng, 0.35, 55.0, 1.0, true)
+		"door_break": s = _rumble(rng, 0.8, 32.0, 0.95)
+		"rocket": s = _shot(rng, 0.6, 70.0, 0.8, true)
+		"mine": s = _arp([1200.0, 1600.0], 0.05, 0.25)
+		"stun": s = _sweep(1600.0, 300.0, 0.4, 0.35, true)
+		"brace": s = _arp([300.0, 450.0], 0.06, 0.3)
+		"clank": s = _shot(rng, 0.07, 700.0, 0.35, true)
+		"hunter_roar": s = _sweep(75.0, 42.0, 0.7, 0.6, true)
+		"craft": s = _arp([523.0, 784.0, 1046.0], 0.05, 0.3)
 		_:
 			if kind.begins_with("chime_"):
 				var notes := []
@@ -57,6 +69,20 @@ static func make(kind: String) -> AudioStreamWAV:
 			else:
 				s = _sweep(440.0, 440.0, 0.1, 0.3, true)
 	return _to_wav(s)
+
+
+## Two-tone wail for the purge warning.
+static func _siren(dur: float) -> PackedFloat32Array:
+	var n := int(RATE * dur)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var phase := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		phase += TAU * (520.0 + 220.0 * sin(TAU * 1.2 * t)) / RATE
+		var env := minf(1.0, t * 8.0) * minf(1.0, (dur - t) * 3.0)
+		out[i] = (signf(sin(phase)) * 0.4 + sin(phase * 0.5) * 0.3) * env * 0.5
+	return out
 
 
 static func _to_wav(s: PackedFloat32Array) -> AudioStreamWAV:

@@ -118,6 +118,19 @@ func _draw() -> void:
 		draw_rect(Rect2(c + Vector2(-r * 0.55, r * 0.5), Vector2(r * 1.1, r * 0.6)), Color(0.95, 0.9, 0.85))
 		draw_circle(c + Vector2(-r * 0.4, -0.1 * r), r * 0.28, Color(0.7, 0.05, 0.05))
 		draw_circle(c + Vector2(r * 0.4, -0.1 * r), r * 0.28, Color(0.7, 0.05, 0.05))
+	# Purge Protocol: rocket pods (green, red once spent), mines, and the
+	# Hunter Warden as a pulsing red diamond - always shown, map or not.
+	for t in world.pods:
+		var pc: Vector2 = origin + (Vector2(t) + Vector2(0.5, 0.5)) * ts
+		draw_rect(Rect2(pc - Vector2.ONE * maxf(ts, 2.5) * 0.7, Vector2.ONE * maxf(ts, 2.5) * 1.4), Color(0.6, 0.15, 0.1) if world.pods[t].used else Color(0.3, 1.0, 0.4))
+	for m in world.mines:
+		draw_circle(origin + (Vector2(m.tile) + Vector2(0.5, 0.5)) * ts, maxf(ts * 0.5, 1.5), Color(0.4, 0.85, 1.0))
+	if world.hunter != null and world.hunter.is_alive():
+		var hc: Vector2 = origin + world.hunter.pos * ts
+		var hr := maxf(ts * 1.4, 3.5) * (1.0 + 0.25 * sin(Time.get_ticks_msec() * 0.012))
+		var hcol := Color(0.4, 0.8, 1.0) if world.hunter.is_stunned() else Color(1.0, 0.1, 0.05)
+		draw_colored_polygon(PackedVector2Array([hc + Vector2(0, -hr), hc + Vector2(hr, 0), hc + Vector2(0, hr), hc + Vector2(-hr, 0)]), hcol)
+		draw_circle(hc, hr * 0.35, Color(0.1, 0.0, 0.0))
 	var p: Vector2 = origin + world.player.pos * ts
 	var f: Vector2 = world.player.forward()
 	var side := Vector2(-f.y, f.x)

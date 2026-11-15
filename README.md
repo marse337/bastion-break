@@ -40,6 +40,7 @@ Godot_v4.7-stable_mono_win64.exe --path .
 | HD / retro pixels | F2 (saved between sessions) |
 | Fullscreen | F11 |
 | Pause | Esc |
+| Purge Protocol: workbench / rocket / mine / brace | C / R / F / B |
 
 ## Modes
 - **Escape run (roguelite, ENTER on the title screen):**
@@ -54,7 +55,24 @@ Godot_v4.7-stable_mono_win64.exe --path .
   - **Iron Gauntlet:** endless 24×24 sectors with no keycards. The elevator opens at 75% kills or when every hostage is free, and two ammo boxes always wait beside it. Every 3rd sector has a Sub-Overseer, and every 2nd sector gives a free perk pick. The run ends when you run out of lives.
   - **Arsenal Scramble:** slots 2–4 are issued a random gun at the start of every floor (Sidearm or Slugger, Auto Rifle / Nail Carbine / Masterwork, Rotary or Arc Discharger).
   - **Daily Lockdown:** today's seed, the same for every player, with Cell upgrades switched off. Every room whose guards all die without any of them being alerted by gunfire adds +0.2x to your score multiplier. Shooting a hostage resets it to x1.0. Your best score for each day is saved on your device.
+  - **Purge Protocol:** the Standard Escape floors, with score x1.5 and a hunter on every floor (below).
 - **Classic campaign (C on the title screen):** the three hand-made floors with classic rules: 3 lives, and dying restarts the floor with a Sidearm and 10 rounds.
+
+## Purge Protocol: the Hunter Warden
+- **The hunt:** 45 seconds into every floor a siren warns you ("PURGE IN 10 SECONDS"), then the Hunter Warden steps out of the starting elevator. It can't be shot dead. It marches toward you along the shortest path at 75% of your walking speed, so running always outpaces it. If it reaches arm's length it grabs you, and that costs a life.
+- **Stun it:** 30 damage in quick succession (any weapon, the shiv included) jams its leg servos for 4 seconds. While it's stunned you can walk straight through it. The bar at the top of the screen is its stun meter.
+- **Doors:** it never opens doors. It batters closed ones down in 2.5 seconds, keycard doors included, and the door is gone for good. Closing a door in its face buys you time.
+- **Noise magnet:** if your gunfire reaches it (the same rule that wakes guards), it surges to 110% of your walking speed for 3 seconds. The shiv is silent, and Muffled Shots, the Acoustic Dampener, the Masterwork and the Nail Carbine all shrink the radius.
+- **Rocket pods:** each floor has two wall-mounted ROCKET PODs, shown in green on the map. When the Hunter is in a pod's line of sight (within 16 tiles), press USE on the pod to fire a homing rocket. That scraps the Hunter for the rest of the floor and pays +5,000 points, an ammo box and 3 scrap.
+- **Warnings:** a countdown bar until it's released, heavy footsteps that get louder as it closes in (heard through walls), and a pulsing red diamond on the map at all times (blue while it's stunned).
+- **If it catches you:** the clone wakes at the elevator, the Hunter goes back inside, its 45-second timer restarts, and a free clip waits at the start.
+- **Crafting:** every guard you kill drops scrap (Sentry or Hound 1, Warden 2, Bounty Warden or Sub-Overseer 4, Overseer 6). Press **C** (touch: CRAFT) to open the workbench, which pauses the game:
+
+  | Gadget | Scrap | Key | Effect |
+  |---|---|---|---|
+  | Breach Rocket | 6 | R | Fired down the crosshair. A hit scraps the Hunter for the floor; the blast deals 60 damage to guards. |
+  | Shock Mine | 3 | F | Dropped at your feet. When the Hunter comes within reach it's stunned for 6 seconds; a guard walking onto it takes 40 damage. |
+  | Door Brace | 2 | B | Clamps the door you face (two per door). Each brace makes the Hunter batter that door for 6 seconds longer. |
 
 ## Procedural floors (`scripts/level_gen.gd`)
 - **Rooms and doors:** binary space partitioning splits the map into rectangular rooms divided by 1-tile walls. Every split gets a door, so rooms connect only through doors, which block sound and Hounds. The Foundry adds extra loop doors.
@@ -96,6 +114,8 @@ Godot_v4.7-stable_mono_win64.exe --path .
 | `scripts/world.gd` | Builds a level from text and runs doors, secrets, pickups, hitscan and noise |
 | `scripts/player.gd` | Movement, collision, weapons |
 | `scripts/enemy.gd` | Enemy AI state machine and stats table |
+| `scripts/hunter.gd` | Purge Protocol's Hunter Warden (stun meter, door battering, noise surge) |
+| `scripts/sprite_cards.gd` | Base for the animated card screens: `perk_cards.gd`, `upgrade_cards.gd`, `craft_cards.gd` |
 | `scripts/hostage.gd` | Tied-up prisoners you cut free with the shiv |
 | `scripts/door.gd` | Sliding doors |
 | `scripts/levels.gd` | **Level maps** (ASCII; legend at the top of the file) and the validator |
@@ -138,6 +158,10 @@ Roguelite flags:
 - `--goto=range|terminal|breaker|locker|lockin|bounty|standoff|exit`: start in front of a room feature.
 - `--give=baton,slugger,nail,masterwork,arc`: with `--arsenal`, also hand out prototypes.
 - `--no-save`: never write `user://meta.cfg`.
+- `--protocol=purge --hunter-at=SEC`: release the Hunter Warden after SEC seconds instead of 45.
+- `--scrap=N`, `--gadgets` (two of each), `--craft` (open the workbench at the start): crafting tests.
+- `--goto=pod|hunterview`: stand at a rocket pod, or somewhere with a view of the elevator.
+- `--debug-hunter`: print the Hunter's state twice a second, plus every on-screen message (works with `--headless`).
 - `--cell`: open the Cell shop.
 - `--perk`: open the perk terminal.
 - `--gen-test=N`: generate N floors per theme, validate them and print a sample map.

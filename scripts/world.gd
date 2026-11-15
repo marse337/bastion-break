@@ -4,13 +4,18 @@ extends Node3D
 ## doors, sliding secret walls, enemies, pickups, hitscan and gunfire noise.
 ## One tile = one world unit. Tile (x, y) covers X in [x, x+1], Z in [y, y+1].
 
-const TEX_NAMES := ["stone", "metal", "rust", "sigil", "exit", "terminal", "breaker_red", "breaker_blue", "breaker_gold", "locker", "range"]
+const TEX_NAMES := ["stone", "metal", "rust", "sigil", "exit", "terminal", "breaker_red", "breaker_blue", "breaker_gold", "locker", "range", "pod"]
 const WALL_CHARS := {"#": 0, "B": 1, "W": 2, "F": 3, "E": 4, "Y": 5, "1": 6, "2": 7, "3": 8, "L": 9, "Z": 10}
 const EXIT_TEX := 4
 const TERMINAL_TEX := 5
 const BREAKER_TEX := {6: "red", 7: "blue", 8: "gold"}
 const LOCKER_TEX := 9
 const RANGE_TEX := 10
+const POD_TEX := 11
+## Purge Protocol: scrap each kind of guard leaves behind.
+const SCRAP := {"sentry": 1, "hound": 1, "warden": 2, "crimson": 4, "suboverseer": 4, "overseer": 6}
+const ROCKET_SPEED := 10.0
+const POD_RANGE := 16.0
 const RANGE_TIME := 8.0
 const LOCKIN_TIME := 12.0
 const ITEM_CHARS := {"a": "ammo", "m": "medkit", "f": "food", "t": "gem", "T": "idol", "x": "life", "g": "rifle", "c": "rotary", "r": "key_red", "u": "key_blue", "k": "key_gold", "M": "map", "v": "mod_crate", "$": "scrip_cache"}
@@ -78,6 +83,18 @@ var range_foul := false
 var _range_saved := []
 # Hound lock-ins: {rect, cages, nodes, state (0 armed, 1 sealed, 2 done), t}
 var lockins: Array = []
+## Purge Protocol state.
+var hunter: Hunter = null
+var hunter_delay := Game.PURGE_DELAY
+var hunter_clock := 0.0
+var hunter_done := false
+var _siren_done := false
+var hunt_field := PackedInt32Array()
+var _hunt_timer := 0.0
+var _hunt_tile := Vector2i(-99, -99)
+var pods := {}
+var rockets: Array[Dictionary] = []
+var mines: Array[Dictionary] = []
 # Daily Lockdown: rooms already scored for the clean-room multiplier
 var clean_rooms := {}
 var _vent_hint := false
@@ -142,6 +159,11 @@ func build(level: Dictionary) -> void:
 				_make_sprite(DECO_CHARS[c], p)
 				if c != "l":
 					blockers[_i(t)] = 1
+	if Game.is_protocol("purge"):
+		var door_tiles := {}
+		for spec in door_specs:
+			door_tiles[spec[0]] = true
+		_place_pods(Vector2i(floori(start.x), floori(start.y)), door_tiles)
 	_build_walls()
 	_build_floor_and_ceiling()
 	for spec in door_specs:
@@ -179,6 +201,10 @@ func build(level: Dictionary) -> void:
 		lockins.append({"rect": spec.rect, "cages": spec.cages, "nodes": nodes, "state": 0, "t": 0.0})
 	if crimson != null:
 		Game.message.emit("A BOUNTY WARDEN guards this floor (skull on the map)")
+	hunt_field.resize(width * height)
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--hunter-at="):
+			hunter_delay = float(a.substr(12))
 	Game.kills_total = enemies.size()
 	Game.secrets_total = pushwalls.size()
 	Game.hostages_total = hostages.size()
@@ -320,7 +346,7 @@ func _build_walls() -> void:
 	for y in height:
 		for x in width:
 			var tid := walls[y * width + x]
-			if tid < 0:
+			if tid < 0 or tid == POD_TEX:
 				continue
 			for d in DIRS:
 				if not _is_wall(Vector2i(x, y) + d):
@@ -331,6 +357,18 @@ func _build_walls() -> void:
 		mi.mesh = tools[tid].commit()
 		mi.material_override = _wall_mats[tid]
 		add_child(mi)
+	# Rocket pods get a mesh and material each, so a spent pod can change look.
+	for t in pods:
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for d in DIRS:
+			if not _is_wall(t + d):
+				_add_cell_face(st, Vector2(t.x, t.y), d)
+		var pm := MeshInstance3D.new()
+		pm.mesh = st.commit()
+		pods[t].mat = _mat(Tex.tex("pod"))
+		pm.material_override = pods[t].mat
+		add_child(pm)
 
 
 func _build_floor_and_ceiling() -> void:
@@ -463,7 +501,7 @@ func player_blocked(old: Vector2, new: Vector2, r: float) -> bool:
 	if collides(new, r):
 		return true
 	for e in enemies:
-		if e.is_alive():
+		if e.is_alive() and not (e is Hunter and e.is_stunned()):
 			var dn := e.pos.distance_to(new)
 			if dn < r + float(e.stats.get("radius", 0.3)) and dn < e.pos.distance_to(old):
 				return true
@@ -568,6 +606,8 @@ func make_noise(from: Vector2i) -> void:
 				continue
 			seen[n] = dist + 1
 			queue.append(n)
+	if hunter != null and seen.has(hunter.tile):
+		hunter.enrage()
 	for e in enemies:
 		# The Bounty Warden ignores distant gunfire; it waits for you.
 		if e.state == Enemy.IDLE and seen.has(e.tile) and e.kind != "crimson":
@@ -608,6 +648,10 @@ func tick(delta: float) -> void:
 	if range_state == 1:
 		_tick_range(delta)
 	_tick_lockins(delta)
+	if Game.is_protocol("purge"):
+		_tick_purge(delta)
+	_tick_rockets(delta)
+	_tick_mines()
 	_tick_projectiles(delta)
 	_tick_effects(delta)
 	if not player.dead:
@@ -618,7 +662,10 @@ func _door_occupied(d: Door) -> bool:
 	if _player_overlaps(d.tile):
 		return true
 	for e in enemies:
-		if e.is_alive():
+		if e is Hunter:
+			if e.is_alive() and e.tile == d.tile:
+				return true
+		elif e.is_alive():
 			if e.tile == d.tile or e.target == d.tile:
 				return true
 		elif Vector2i(floori(e.pos.x), floori(e.pos.y)) == d.tile:
@@ -703,6 +750,9 @@ func player_use() -> void:
 	if not in_bounds(t):
 		return
 	var tid := walls[_i(t)]
+	if tid == POD_TEX:
+		_use_pod(t)
+		return
 	if tid == TERMINAL_TEX:
 		_use_terminal()
 		return
@@ -972,6 +1022,23 @@ func debug_goto(what: String) -> bool:
 	var target := Vector2i(-1, -1)
 	var dir := Vector2i.ZERO
 	match what:
+		"hunterview":
+			# A spot 4-7 tiles from the elevator with a clear view of it.
+			var st := Vector2i(floori(start_pos.x), floori(start_pos.y))
+			for y in height:
+				for x in width:
+					var q := Vector2i(x, y)
+					var dd := Vector2(q).distance_to(Vector2(st))
+					if dd >= 2.5 and dd <= 9.0 and not _is_wall(q) and blockers[_i(q)] == 0 and not doors.has(q) and has_los(Vector2(q) + Vector2(0.5, 0.5), start_pos):
+						player.pos = Vector2(q) + Vector2(0.5, 0.5)
+						player.angle = (start_pos - player.pos).angle()
+						return true
+			return false
+		"pod":
+			for t in pods:
+				target = t + pods[t].dir
+				dir = -pods[t].dir
+				break
 		"range":
 			if range_data.is_empty():
 				return false
@@ -1306,6 +1373,10 @@ func on_enemy_killed(e: Enemy) -> void:
 	Game.kills += 1
 	Game.add_score(e.stats.score)
 	Game.earn_scrip(KILL_SCRIP.get(e.kind, 1))
+	if Game.is_protocol("purge"):
+		var s: int = SCRAP.get(e.kind, 1)
+		Game.scrap += s
+		Game.message.emit("+%d SCRAP  (%d)   C to craft" % [s, Game.scrap])
 	release(e.tile, e)
 	release(e.target, e)
 	play_sfx("die", e.pos)
@@ -1354,6 +1425,16 @@ func respawn_player() -> void:
 		p.node.queue_free()
 	projectiles.clear()
 	Game.health = Game.MAX_HEALTH
+	if Game.is_protocol("purge") and not hunter_done:
+		# The Hunter Warden goes back in its elevator; the clock restarts and a
+		# clip waits at the start so you can sprint straight off.
+		if hunter != null:
+			enemies.erase(hunter)
+			hunter.queue_free()
+			hunter = null
+		hunter_clock = 0.0
+		_siren_done = false
+		_spawn_item("clip", start_pos + Vector2.from_angle(start_angle) * 0.7)
 	if Game.ammo < Game.START_AMMO:
 		Game.ammo = Game.START_AMMO
 		if Game.current_weapon == Game.Weapon.SHIV and Game.auto_shiv:
@@ -1512,3 +1593,315 @@ func _tick_effects(delta: float) -> void:
 
 func play_sfx(sfx_name: String, at = null) -> void:
 	main.play_sfx(sfx_name, at)
+
+
+# ================================================================ purge protocol
+
+## Two rocket pods per floor, on walls that look down the longest open runs
+## (away from the start), so there's always a corridor to lure the Hunter into.
+func _place_pods(start: Vector2i, door_tiles: Dictionary) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = Game.run_seed + Game.level_index * 131
+	var cands := []
+	for y in range(1, height - 1):
+		for x in range(1, width - 1):
+			var t := Vector2i(x, y)
+			var tid := walls[_i(t)]
+			if tid < 0 or tid > 3:
+				continue
+			for d in DIRS:
+				var f: Vector2i = t + d
+				if _is_wall(f) or door_tiles.has(f) or pushwall_at(f) != null:
+					continue
+				var near_door := false
+				for dd in DIRS:
+					if door_tiles.has(f + dd) or door_tiles.has(t + dd):
+						near_door = true
+				if near_door:
+					continue
+				var run := 0
+				var p := f
+				while in_bounds(p) and not _is_wall(p) and not door_tiles.has(p) and run < 14:
+					run += 1
+					p += d
+				if run >= 5 and absi(f.x - start.x) + absi(f.y - start.y) >= 5:
+					cands.append([run + rng.randf(), t, d])
+	cands.sort_custom(func(a, b): return a[0] > b[0])
+	for c in cands:
+		var t: Vector2i = c[1]
+		var ok := true
+		for q in pods:
+			if absi(q.x - t.x) + absi(q.y - t.y) < 8:
+				ok = false
+		if ok:
+			pods[t] = {"dir": c[2], "used": false, "mat": null}
+			walls[_i(t)] = POD_TEX
+		if pods.size() >= 2:
+			break
+
+
+func hunter_paused() -> bool:
+	if player.dead or range_state == 1:
+		return true
+	for li in lockins:
+		if li.state == 1:
+			return true
+	return false
+
+
+func _tick_purge(delta: float) -> void:
+	if hunter_done:
+		return
+	if hunter == null:
+		if not hunter_paused():
+			hunter_clock += delta
+		var left := hunter_delay - hunter_clock
+		if left <= 10.0 and not _siren_done:
+			_siren_done = true
+			play_sfx("siren")
+			Game.message.emit("CELL BLOCK PURGE IN 10 SECONDS")
+		if left <= 0.0:
+			_spawn_hunter()
+		return
+	_hunt_timer -= delta
+	if _hunt_timer <= 0.0 or player_tile() != _hunt_tile:
+		_rebuild_hunt_field()
+	if "--debug-hunter" in OS.get_cmdline_user_args() and Engine.get_process_frames() % 30 == 0:
+		print("hunter t=%.1f tile=%s target=%s pose=%s bash=%s bash_t=%.2f stun=%.1f grab=%.2f field=%d paused=%s" % [Game.level_time, hunter.tile, hunter.target, hunter.pose, hunter.bash_door.tile if hunter.bash_door else "-", hunter.bash_t, hunter.stun_t, hunter.grab_t, hunt_field[_i(hunter.tile)], hunter_paused()])
+
+
+func _spawn_hunter() -> void:
+	var t := Vector2i(floori(start_pos.x), floori(start_pos.y))
+	hunter = Hunter.new()
+	add_child(hunter)
+	hunter.setup_hunter(self, t)
+	enemies.append(hunter)
+	_rebuild_hunt_field()
+	play_sfx("push", start_pos)
+	play_sfx("boss_alert")
+	Game.message.emit("THE HUNTER WARDEN HAS LEFT THE ELEVATOR")
+
+
+## Distance map from Rook for the Hunter: it walks through every door
+## (it batters the closed ones) but not walls, secret walls or props.
+func _rebuild_hunt_field() -> void:
+	hunt_field.fill(INF)
+	var src := player_tile()
+	_hunt_tile = src
+	_hunt_timer = 0.5
+	if not in_bounds(src):
+		return
+	hunt_field[_i(src)] = 0
+	var queue: Array[Vector2i] = [src]
+	var qi := 0
+	while qi < queue.size():
+		var c := queue[qi]
+		qi += 1
+		var v := hunt_field[_i(c)] + 1
+		for d in DIRS:
+			var n: Vector2i = c + d
+			if in_bounds(n) and hunt_field[_i(n)] > v and not _is_wall(n) and blockers[_i(n)] == 0 and pushwall_at(n) == null:
+				hunt_field[_i(n)] = v
+				queue.append(n)
+
+
+func hunt_step(h: Hunter) -> Vector2i:
+	var cur := h.tile
+	var best := cur
+	var bestv := hunt_field[_i(cur)]
+	if bestv >= INF:
+		# Off the map of reachable tiles (e.g. Rook is behind a secret wall): wait.
+		return cur
+	for d in DIRS:
+		var n: Vector2i = cur + d
+		if in_bounds(n) and hunt_field[_i(n)] < bestv:
+			best = n
+			bestv = hunt_field[_i(n)]
+	return best
+
+
+## Heavy footsteps that get louder as it closes in (through walls and doors).
+func hunter_stomp(h: Hunter) -> void:
+	var d := h.pos.distance_to(player.pos)
+	if d < 16.0:
+		main.play_sfx_db("stomp", lerpf(-2.0, -30.0, d / 16.0))
+
+
+func hunter_entered(_h: Hunter, _t: Vector2i) -> void:
+	pass
+
+
+func hunter_grab(_h: Hunter) -> void:
+	damage_player(500)
+
+
+func break_door(door: Door) -> void:
+	var t := door.tile
+	doors.erase(t)
+	door.queue_free()
+	_explode(Vector2(t.x + 0.5, t.y + 0.5), false)
+	play_sfx("door_break", Vector2(t.x + 0.5, t.y + 0.5))
+	_field_timer = 0.0
+	map_dirty = true
+	Game.message.emit("The Hunter Warden smashed through a door!")
+
+
+## Rocket hit: the Hunter is scrapped for the rest of this floor.
+func destroy_hunter() -> void:
+	if hunter == null or not hunter.is_alive():
+		return
+	hunter.destroy()
+	hunter_done = true
+	for i in 3:
+		_explode(hunter.pos + Vector2(randf_range(-0.4, 0.4), randf_range(-0.4, 0.4)), false)
+	var drop := Vector2(hunter.tile.x + 0.5, hunter.tile.y + 0.5)
+	_spawn_item("ammo", drop)
+	Game.add_score(5000)
+	Game.scrap += 3
+	Game.message.emit("HUNTER WARDEN SCRAPPED!  +5000, +8 ammo, +3 scrap")
+
+
+func _use_pod(t: Vector2i) -> void:
+	var pod: Dictionary = pods[t]
+	if pod.used:
+		play_sfx("denied")
+		Game.message.emit("This rocket pod is spent")
+		return
+	if hunter == null or not hunter.is_alive():
+		play_sfx("denied")
+		Game.message.emit("Rocket pod armed - lure the Hunter Warden into its sights")
+		return
+	var from := Vector2(t.x + 0.5, t.y + 0.5) + Vector2(pod.dir) * 0.6
+	if from.distance_to(hunter.pos) > POD_RANGE or not has_los(from, hunter.pos):
+		play_sfx("denied")
+		Game.message.emit("The Hunter Warden isn't in the pod's sights")
+		return
+	pod.used = true
+	pod.mat.albedo_texture = Tex.tex("pod_empty")
+	_launch_rocket(from, (hunter.pos - from).normalized(), true)
+
+
+## Breach Rocket gadget: fired straight down the crosshair.
+func fire_rocket() -> void:
+	var f: Vector2 = player.forward()
+	_launch_rocket(player.pos + f * 0.35, f, false)
+	make_noise(player_tile())
+	Game.message.emit("Breach Rocket away!")
+
+
+func _launch_rocket(from: Vector2, dir: Vector2, homing: bool) -> void:
+	rockets.append({"pos": from, "dir": dir, "homing": homing, "t": 0.0, "node": _make_sprite("rocket", from)})
+	play_sfx("rocket", from)
+
+
+func _tick_rockets(delta: float) -> void:
+	for r in rockets.duplicate():
+		r.t += delta
+		if r.homing and hunter != null and hunter.is_alive():
+			r.dir = (hunter.pos - r.pos).normalized()
+		var np: Vector2 = r.pos + r.dir * ROCKET_SPEED * delta
+		var hit := false
+		for e in enemies:
+			if e.is_alive() and e.pos.distance_to(np) < (0.7 if e == hunter else 0.45) and (not r.homing or e == hunter):
+				hit = true
+		if hit or blocks_sight(Vector2i(floori(np.x), floori(np.y))) or r.t > 4.0:
+			_rocket_blast(r.pos if not hit else np)
+			r.node.queue_free()
+			rockets.erase(r)
+		else:
+			r.pos = np
+			r.node.position = Vector3(np.x, 0.5, np.y)
+
+
+func _rocket_blast(at: Vector2) -> void:
+	for i in 2:
+		_explode(at + Vector2(randf_range(-0.2, 0.2), randf_range(-0.2, 0.2)), false)
+	for e in enemies.duplicate():
+		if e.is_alive() and e.pos.distance_to(at) < 1.6:
+			if e == hunter:
+				destroy_hunter()
+			else:
+				e.take_damage(60, true)
+
+
+func drop_mine() -> bool:
+	var t := player_tile()
+	for m in mines:
+		if m.tile == t:
+			return false
+	var p := Vector2(t.x + 0.5, t.y + 0.5)
+	var node := _make_sprite("mine", p)
+	node.position.y = 0.12
+	node.pixel_size *= 0.5
+	mines.append({"tile": t, "node": node})
+	play_sfx("mine")
+	return true
+
+
+func _remove_mine(m: Dictionary) -> void:
+	m.node.queue_free()
+	mines.erase(m)
+	play_sfx("stun", Vector2(m.tile.x + 0.5, m.tile.y + 0.5))
+
+
+## Shock Mines: the Hunter is stunned for 6 s, guards take 40 damage.
+func _tick_mines() -> void:
+	for m in mines.duplicate():
+		# The Hunter sets a mine off as soon as it comes within reach of it.
+		if hunter != null and hunter.is_alive() and not hunter.is_stunned():
+			if hunter.pos.distance_to(Vector2(m.tile.x + 0.5, m.tile.y + 0.5)) < 0.95:
+				_remove_mine(m)
+				_spark(hunter.pos)
+				hunter.stun(6.0)
+				continue
+		for e in enemies:
+			if e != hunter and e.is_alive() and e.tile == m.tile:
+				_remove_mine(m)
+				_spark(e.pos)
+				e.take_damage(40, true)
+				break
+
+
+## Door Brace: clamps the door Rook faces (up to two braces per door).
+func brace_door() -> String:
+	var f := player.forward()
+	var dir := Vector2i(int(signf(f.x)), 0) if absf(f.x) > absf(f.y) else Vector2i(0, int(signf(f.y)))
+	var door = doors.get(player_tile() + dir)
+	if door == null:
+		door = doors.get(player_tile())
+	if door == null:
+		return "Face a door to brace it"
+	var n: int = door.get_meta("braces", 0)
+	if n >= 2:
+		return "That door already has two braces"
+	door.set_meta("braces", n + 1)
+	play_sfx("brace", Vector2(door.tile.x + 0.5, door.tile.y + 0.5))
+	map_dirty = true
+	return ""
+
+
+## Purge gadgets (R / F / B). Returns false if nothing happened.
+func use_gadget(id: String) -> bool:
+	if not Game.is_protocol("purge") or player.dead:
+		return false
+	if int(Game.gadgets.get(id, 0)) <= 0:
+		play_sfx("denied")
+		Game.message.emit("No %s - press C to craft one from scrap" % Game.GADGETS[id][0])
+		return false
+	match id:
+		"rocket":
+			fire_rocket()
+		"mine":
+			if not drop_mine():
+				Game.message.emit("There's already a mine here")
+				return false
+			Game.message.emit("Shock Mine armed")
+		"brace":
+			var why := brace_door()
+			if why != "":
+				play_sfx("denied")
+				Game.message.emit(why)
+				return false
+			Game.message.emit("Door braced - the Hunter needs 6 s more to break it")
+	Game.gadgets[id] = int(Game.gadgets[id]) - 1
+	return true

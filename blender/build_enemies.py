@@ -119,9 +119,14 @@ def _sparks(rig, parent, loc):
 # ================================================================== humanoids
 
 def humanoid(kind):
-    heavy = kind in ("warden", "crimson")
-    w = 1.25 if heavy else 1.0
-    if kind == "crimson":
+    heavy = kind in ("warden", "crimson", "hunter")
+    w = 1.45 if kind == "hunter" else (1.25 if heavy else 1.0)
+    if kind == "hunter":
+        # Hunter Warden: blackened plate, hazard-yellow trim, a red slit visor.
+        armor = mat("armor", (0.07, 0.075, 0.08), metal=0.85, rough=0.3, noise=0.3, noise_scale=12)
+        trim = mat("trim", (0.85, 0.58, 0.06), metal=0.5, rough=0.4)
+        visor = glow("visor", (1.0, 0.05, 0.03), 7)
+    elif kind == "crimson":
         armor = mat("armor", (0.42, 0.04, 0.035), metal=0.6, rough=0.35, noise=0.25, noise_scale=10)
         trim = mat("trim", (0.12, 0.1, 0.09), metal=0.8, rough=0.35)
         visor = glow("visor", (1.0, 0.55, 0.05), 4)
@@ -163,6 +168,11 @@ def humanoid(kind):
             g = ball("exhaust", 0.03, (s * 0.06 * w, 0.16, 0.3), glow("steam", (1.0, 0.6, 0.2), 3), torso, scale=(1, 1, 2))
             rig.flashes["vent"].append(g)
     ball("antenna_tip", 0.01, (0.06 * w, 0.12, 0.39), visor, torso)
+    if kind == "hunter":
+        # Hazard chevrons on the chest and a heavy collar ring.
+        for i in range(4):
+            box("chevron", (0.03, 0.012, 0.05), (-0.06 + i * 0.04, -0.077, 0.12), trim, torso, rot=rad(0, 30, 0))
+        torus("collar", 0.07, 0.022, (0, 0, 0.25), trim, torso)
 
     head = rig.j("head", (0, 0, 0.26), torso)
     cyl("neck", 0.03, 0.05, (0, 0, 0.0), suit, head)
@@ -191,6 +201,18 @@ def humanoid(kind):
         box("shin", (0.07 * w, 0.075, 0.17), (0, 0, -0.1), armor, kn, bevel=0.015)
         box("boot", (0.08 * w, 0.13, 0.05), (0, -0.025, -0.205), boot, kn, bevel=0.012)
 
+    if kind == "hunter":
+        # No gun: two hydraulic clamp hands and glowing knee servos.
+        claw = mat("claw", (0.55, 0.56, 0.6), metal=1.0, rough=0.25)
+        for tag in ("R", "L"):
+            el = arms[tag]
+            box("cuff", (0.09, 0.09, 0.05), (0, 0, -0.13), trim, el, bevel=0.01)
+            for k in (-1, 1):
+                box("claw", (0.022, 0.05, 0.11), (k * 0.035, 0, -0.2), claw, el, bevel=0.006, rot=rad(0, k * 12, 0))
+        servo = glow("servo", (1.0, 0.1, 0.05), 5)
+        for tag in ("R", "L"):
+            ball("servo", 0.022, (0, -0.06, 0.0), servo, rig.joints["knee" + tag])
+        return rig
     mount = rig.j("gun", (0, 0, -0.14), arms["R"], rot=(90, 0, 0))
     if heavy:
         box("gbody", (0.08, 0.3, 0.09), (0, -0.08, 0.02), gunm, mount, bevel=0.012)
@@ -249,6 +271,40 @@ def humanoid_pose(name, frame, count=4):
                 "torso": (-5, 0, 0), "head": (-10, 0, 25), "shoulderR": (-30, 0, -70), "shoulderL": (-20, 0, 80),
                 "elbowL": (-30, 0, 0)}
     return {}
+
+
+def hunter_pose(name, frame, count=4):
+    """The Hunter Warden walks with its clamp hands low and wide."""
+    low = {"shoulderR": (-12, 0, -14), "elbowR": (-25, 0, 0), "shoulderL": (-12, 0, 14), "elbowL": (-25, 0, 0)}
+    if name == "stand":
+        return dict(low, torso=(6, 0, 0), head=(4, 0, 0))
+    if name == "walk":
+        pose = humanoid_pose("walk", frame, count)
+        p = frame * math.tau / count
+        pose.update(low)
+        pose["shoulderR"] = (-12 + 14 * math.sin(p), 0, -14)
+        pose["shoulderL"] = (-12 - 14 * math.sin(p), 0, 14)
+        pose["torso"] = (8, 0, 8 * math.sin(p))
+        pose["root_loc"] = (0, 0, -0.02 * abs(math.cos(p)))
+        return pose
+    if name == "stun":
+        # Slumped, servos sparking, swaying slightly.
+        s = 1 if frame == 0 else -1
+        return {"torso": (28, 0, 6 * s), "head": (30, 0, -8 * s), "shoulderR": (8, 0, -6), "elbowR": (-10, 0, 0),
+                "shoulderL": (8, 0, 6), "elbowL": (-10, 0, 0), "thighL": (-20, 0, 0), "kneeL": (40, 0, 0),
+                "thighR": (-25, 0, 0), "kneeR": (45, 0, 0), "root_loc": (0, 0, -0.05), "sparks": True}
+    if name == "bash":
+        if frame == 0:
+            return {"shoulderR": (-165, 0, -10), "elbowR": (-20, 0, 0), "shoulderL": (-165, 0, 10), "elbowL": (-20, 0, 0),
+                    "torso": (-12, 0, 0), "head": (-8, 0, 0), "thighL": (-15, 0, 0), "kneeL": (15, 0, 0)}
+        return {"shoulderR": (-80, 0, -5), "elbowR": (-10, 0, 0), "shoulderL": (-80, 0, 5), "elbowL": (-10, 0, 0),
+                "torso": (22, 0, 0), "head": (10, 0, 0), "thighR": (-20, 0, 0), "kneeR": (25, 0, 0)}
+    if name == "grab":
+        return {"shoulderR": (-95, 0, -25), "elbowR": (-10, 0, 0), "shoulderL": (-95, 0, 25), "elbowL": (-10, 0, 0),
+                "torso": (14, 0, 0), "head": (6, 0, 0), "thighL": (-25, 0, 0), "kneeL": (20, 0, 0)}
+    if name in ("aim", "fire"):
+        return hunter_pose("grab", 0)
+    return humanoid_pose(name, frame, count)
 
 
 # ================================================================== hound
@@ -521,12 +577,15 @@ KINDS = {
     "sentry": (humanoid, humanoid_pose),
     "warden": (humanoid, humanoid_pose),
     "crimson": (humanoid, humanoid_pose),
+    "hunter": (humanoid, hunter_pose),
     "hound": (hound, hound_pose),
     "overseer": (overseer, overseer_pose),
     "hostage": (hostage, hostage_pose),
 }
 
-EXTRA_SEQ = {"overseer": [("launch", 0, 24, False)], "crimson": [("vent", 0, 26, False)]}
+EXTRA_SEQ = {"overseer": [("launch", 0, 24, False)], "crimson": [("vent", 0, 26, False)],
+             "hunter": [("stun", 0, 70, False), ("stun", 1, 72, False), ("bash", 0, 76, False),
+                        ("bash", 1, 78, False), ("grab", 0, 82, False)]}
 # Hostages don't fight: two struggling frames, two freed frames and a body.
 SEQ_OVERRIDE = {"hostage": [("bound", 0, 1, False), ("bound", 1, 4, False), ("freed", 0, 10, False),
                             ("freed", 1, 13, False), ("dead", 0, 20, False)]}
@@ -540,6 +599,8 @@ def build(only=()):
         rig = make(kind)
         if kind == "overseer":
             rig.turn.scale = (0.92, 0.92, 0.92)
+        elif kind == "hunter":
+            rig.turn.scale = (1.06, 1.06, 1.06)
         sc = bpy.context.scene
         out = os.path.join(ASSETS_DIR, "enemies", kind)
         seq = SEQ_OVERRIDE.get(kind) or make_seq(kind) + EXTRA_SEQ.get(kind, [])

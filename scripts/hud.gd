@@ -26,6 +26,8 @@ var screen_body: Label
 var screen_foot: Label
 var perk_cards: PerkCards
 var upgrade_cards: UpgradeCards
+var craft_cards: CraftCards
+var gadget_label: Label
 var _world: World = null
 var dmg_alpha := 0.0
 var pick_alpha := 0.0
@@ -81,6 +83,10 @@ func _ready() -> void:
 	boss_fill = _rect(boss_panel, Vector2(1, 11), Vector2(BOSS_W - 2, 5), Color(0.85, 0.12, 0.08))
 	boss_panel.visible = false
 
+	# Purge Protocol: scrap and gadgets, just above the status bar.
+	gadget_label = _label(root, Vector2(4, BAR_Y - 13), Vector2(W - 8, 12), 8, Color(0.95, 0.85, 0.6))
+	gadget_label.visible = false
+
 	screen = _rect(root, Vector2.ZERO, Vector2(W, H), Color(0.03, 0.03, 0.05, 0.94))
 	screen_title = _label(screen, Vector2(0, 30), Vector2(W, 40), 30, Color(1, 0.55, 0.15))
 	screen_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -92,6 +98,9 @@ func _ready() -> void:
 	perk_cards = PerkCards.new()
 	perk_cards.position.y = 58
 	screen.add_child(perk_cards)
+	craft_cards = CraftCards.new()
+	craft_cards.position.y = 58
+	screen.add_child(craft_cards)
 	upgrade_cards = UpgradeCards.new()
 	upgrade_cards.position.y = 54
 	screen.add_child(upgrade_cards)
@@ -148,6 +157,20 @@ func tick(delta: float, world: World) -> void:
 		if world.range_state == 1:
 			boss_panel.visible = false
 		boss_fill.size.x = (BOSS_W - 2.0) * clampf(float(b.hp) / b.max_hp, 0.0, 1.0)
+	boss_fill.color = Color(0.85, 0.12, 0.08)
+	var purge := world != null and Game.is_protocol("purge")
+	if purge and not boss_panel.visible and world.range_state != 1:
+		_purge_bar(world)
+	gadget_label.visible = purge and not world.player.dead
+	if gadget_label.visible:
+		var keys := not TouchControls.active
+		var parts := ["SCRAP %d" % Game.scrap]
+		for id in Game.GADGET_ORDER:
+			var g: Array = Game.GADGETS[id]
+			parts.append(("%s %s %d" % [g[2], g[0].split(" ")[1].to_upper(), int(Game.gadgets[id])]) if keys else ("%s %d" % [g[0].split(" ")[1].to_upper(), int(Game.gadgets[id])]))
+		if keys:
+			parts.append("C craft")
+		gadget_label.text = "    ".join(parts)
 	dmg_alpha = maxf(0.0, dmg_alpha - delta * 1.8)
 	pick_alpha = maxf(0.0, pick_alpha - delta * 2.5)
 	damage_rect.color.a = maxf(dmg_alpha, death_alpha)
@@ -156,6 +179,34 @@ func tick(delta: float, world: World) -> void:
 		_msg_t -= delta
 		if _msg_t <= 0.0:
 			msg.text = ""
+
+
+## Purge Protocol bar: countdown to the Hunter's release, then its stun meter.
+func _purge_bar(world: World) -> void:
+	var h: Hunter = world.hunter
+	if world.hunter_done:
+		return
+	boss_panel.visible = true
+	if h == null:
+		var left := maxf(0.0, world.hunter_delay - world.hunter_clock)
+		boss_label.text = "HUNTER RELEASED IN %d:%02d" % [int(left) / 60, int(left) % 60]
+		boss_fill.size.x = (BOSS_W - 2.0) * clampf(left / world.hunter_delay, 0.0, 1.0)
+		boss_fill.color = Color(0.9, 0.55, 0.1) if left > 10.0 else Color(1.0, 0.15, 0.1)
+		return
+	if not h.is_alive():
+		boss_panel.visible = false
+		return
+	if h.is_stunned():
+		boss_label.text = "HUNTER STUNNED - GO!"
+		boss_fill.size.x = (BOSS_W - 2.0) * clampf(h.stun_t / h.stun_len, 0.0, 1.0)
+		boss_fill.color = Color(0.3, 0.75, 1.0)
+	else:
+		var tag := "  (ENRAGED)" if h.rage_t > 0.0 else ""
+		if h.bash_door != null:
+			tag = "  (BREAKING A DOOR)"
+		boss_label.text = "HUNTER WARDEN - STUN METER" + tag
+		boss_fill.size.x = (BOSS_W - 2.0) * clampf(h.stun_dmg / Hunter.STUN_AT, 0.0, 1.0)
+		boss_fill.color = Color(1.0, 0.8, 0.2)
 
 
 func flash_damage(amount: int) -> void:
@@ -167,6 +218,8 @@ func flash_pickup() -> void:
 
 
 func show_message(text: String) -> void:
+	if "--debug-hunter" in OS.get_cmdline_user_args():
+		print("MSG ", text)
 	msg.text = text
 	_msg_t = 2.5
 
@@ -183,6 +236,7 @@ func show_screen(title: String, body: String, compact := false) -> void:
 	screen_body.size.y = 215 if compact else 180
 	perk_cards.visible = false
 	upgrade_cards.visible = false
+	craft_cards.visible = false
 	screen_foot.text = ""
 	screen_foot.position.y = H - 42
 	screen_foot.size.y = 14
@@ -216,3 +270,14 @@ func hide_screen() -> void:
 	screen.visible = false
 	perk_cards.visible = false
 	upgrade_cards.visible = false
+	craft_cards.visible = false
+
+
+## Purge workbench: scrap count, the three gadget cards, key help.
+func show_craft(header: String, footer: String) -> void:
+	var keep := craft_cards.visible
+	show_screen("WORKBENCH", header, true)
+	screen_body.position.y = 40
+	screen_foot.text = footer
+	craft_cards.visible = keep
+	craft_cards.show_gadgets()

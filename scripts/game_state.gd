@@ -39,8 +39,18 @@ const PROTOCOLS := {
 	"gauntlet": ["Iron Gauntlet", "Endless small floors, no keycards. Exit opens at 75% kills or all hostages freed. Sub-Overseer every 3rd floor, free perk every 2nd."],
 	"scramble": ["Arsenal Scramble", "Slots 2-4 are issued random prototype guns at the start of every floor."],
 	"daily": ["Daily Lockdown", "Today's seed, Cell upgrades off. Rooms cleared without a gunfire alert add +0.2x score multiplier; hitting a hostage resets it."],
+	"purge": ["Purge Protocol", "45 s into every floor an unkillable Hunter Warden leaves the elevator. Stun it, rocket it from wall pods, and craft gadgets from guard scrap (C). Score x1.5."],
 }
-const PROTOCOL_ORDER := ["escape", "ghost", "gauntlet", "scramble", "daily"]
+const PROTOCOL_ORDER := ["escape", "ghost", "gauntlet", "scramble", "daily", "purge"]
+
+## Purge Protocol gadgets, crafted from scrap. id: [name, scrap cost, key, description]
+const GADGETS := {
+	"rocket": ["Breach Rocket", 6, "R", "Fire straight ahead. One hit scraps the Hunter Warden for this floor; it also blasts guards."],
+	"mine": ["Shock Mine", 3, "F", "Drop it at your feet. The Hunter Warden is stunned for 6 s when it steps on it; guards take 40 damage."],
+	"brace": ["Door Brace", 2, "B", "Clamp the door you face. The Hunter Warden needs 6 s more to batter it down."],
+}
+const GADGET_ORDER := ["rocket", "mine", "brace"]
+const PURGE_DELAY := 45.0
 const DIFFICULTY_NAMES := ["TRUSTEE (easy)", "INMATE (normal)", "LIFER (hard)"]
 const MAX_HEALTH := 100
 const MAX_AMMO := 99
@@ -118,6 +128,9 @@ var bounty_floor := -1
 var locker_pending := false
 ## Extra perk picks waiting for the next terminal (Perk Chips, Gauntlet floors).
 var bonus_perks := 0
+## Purge Protocol: scrap from guards, and crafted gadgets carried.
+var scrap := 0
+var gadgets := {"rocket": 0, "mine": 0, "brace": 0}
 
 var kills := 0
 var kills_total := 0
@@ -263,6 +276,16 @@ func start_ammo() -> int:
 	return [10, 16, 24][clampi(upgrade_level("stash"), 0, 2)] if is_run() else START_AMMO
 
 
+## Purge Protocol: turns scrap into a gadget. Returns false if you can't afford it.
+func craft(id: String) -> bool:
+	var cost: int = GADGETS[id][1]
+	if scrap < cost:
+		return false
+	scrap -= cost
+	gadgets[id] = int(gadgets[id]) + 1
+	return true
+
+
 func noise_radius() -> int:
 	var r := NOISE_RADIUS - 8 * upgrade_level("dampener")
 	r = r / 2 if has_perk("muffler") else r
@@ -290,9 +313,11 @@ func new_run(proto := "escape") -> void:
 	perks.clear()
 	if proto == "ghost":
 		perks.append("ghost")
-	score_mult = 1.0
+	score_mult = 1.5 if proto == "purge" else 1.0
 	locker_pending = false
 	bonus_perks = 0
+	scrap = 0
+	gadgets = {"rocket": 0, "mine": 0, "brace": 0}
 	# One Bounty Warden per run, on floor 1 or 2 (floor 2 in the Gauntlet).
 	bounty_floor = 1 if proto == "gauntlet" else (run_seed % 2)
 	run_scrip = 0
@@ -352,7 +377,7 @@ func restart_after_death() -> void:
 
 
 func add_score(n: int) -> void:
-	if n > 0 and is_protocol("daily"):
+	if n > 0 and (is_protocol("daily") or is_protocol("purge")):
 		n = int(round(n * score_mult))
 	score += n
 	while score >= next_life_at:

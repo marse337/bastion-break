@@ -14,6 +14,8 @@ const STATS := {
 	# deals triple damage. Waits in its room until it has seen you.
 	"crimson": {"hp": 260, "speed": 1.9, "score": 3000, "aim": 0.45, "burst": 5, "acc": 0.8, "dmg": [5, 13], "range": 18.0, "pain": 0.08, "name": "BOUNTY WARDEN"},
 	# Iron Gauntlet mini-boss: a smaller Overseer.
+	# Purge Protocol's Hunter Warden (see hunter.gd): can't be shot dead.
+	"hunter": {"hp": 9999, "speed": 1.95, "score": 0, "aim": 0.5, "burst": 1, "acc": 0.0, "dmg": [0, 0], "range": 0.8, "pain": 0.0, "radius": 0.42, "name": "HUNTER WARDEN"},
 	"suboverseer": {"hp": 300, "speed": 1.4, "score": 2500, "aim": 0.5, "burst": 4, "acc": 0.55, "dmg": [3, 8], "range": 22.0, "pain": 0.08, "radius": 0.42, "boss": true, "sprite": "overseer", "name": "SUB-OVERSEER"},
 }
 const HP_SCALE := [0.75, 1.0, 1.3]
