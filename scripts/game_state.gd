@@ -79,6 +79,9 @@ var secrets := 0
 var secrets_total := 0
 var treasure := 0
 var treasure_total := 0
+var hostages := 0
+var hostages_total := 0
+var hostages_lost := 0
 var level_time := 0.0
 
 
@@ -219,6 +222,9 @@ func begin_level() -> void:
 	secrets_total = 0
 	treasure = 0
 	treasure_total = 0
+	hostages = 0
+	hostages_total = 0
+	hostages_lost = 0
 	floor_scrip = 0
 	level_time = 0.0
 	level_start_score = score

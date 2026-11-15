@@ -13,6 +13,7 @@ const C_UNVISITED := Color(0.22, 0.34, 0.58)
 const C_WALL := Color(0.33, 0.33, 0.38)
 const C_DOOR := Color(0.95, 0.6, 0.2)
 const C_EXIT := Color(0.2, 1.0, 0.35)
+const C_HOSTAGE := Color(1.0, 0.45, 0.85)
 
 var world: World = null
 var expanded := false
@@ -106,6 +107,9 @@ func _draw() -> void:
 			var c := _colors[y * world.width + x]
 			if c.a > 0.0:
 				draw_rect(Rect2(origin + Vector2(x, y) * ts, Vector2(ts, ts)), c)
+	for hg in world.hostages:
+		if hg.is_bound() and _room_shown(world.room_of[hg.tile.y * world.width + hg.tile.x]):
+			draw_rect(Rect2(origin + Vector2(hg.tile) * ts, Vector2(ts, ts)).grow(0.5), C_HOSTAGE)
 	var p: Vector2 = origin + world.player.pos * ts
 	var f: Vector2 = world.player.forward()
 	var side := Vector2(-f.y, f.x)

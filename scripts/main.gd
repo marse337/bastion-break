@@ -29,6 +29,7 @@ var pending_perks := 0
 var perk_choices: Array[String] = []
 var _args := PackedStringArray()
 var touch: TouchControls
+var _taps: Array = []
 
 
 func _ready() -> void:
@@ -93,6 +94,11 @@ func _ready() -> void:
 			seed_override = int(a.substr(7))
 		elif a.begins_with("--difficulty="):
 			Game.difficulty = clampi(int(a.substr(13)), 0, 2)
+		elif a.begins_with("--tap="):
+			# --tap=action@seconds[,action@seconds...]: press an action for one frame later on.
+			for part in a.substr(6).split(","):
+				var bits := part.split("@")
+				_taps.append([bits[0], float(bits[1])])
 		elif a.begins_with("--hold="):
 			for act in a.substr(7).split(","):
 				Input.action_press(act)
@@ -350,11 +356,12 @@ func on_level_exit() -> void:
 	var kp := _pct(Game.kills, Game.kills_total)
 	var sp := _pct(Game.secrets, Game.secrets_total)
 	var tp := _pct(Game.treasure, Game.treasure_total)
+	var hp := _pct(Game.hostages, Game.hostages_total)
 	var par: int = current_level.get("par", 120)
 	var t := int(Game.level_time)
 	var bonus := 0
 	var perfect := 0
-	for p in [kp, sp, tp]:
+	for p in [kp, sp, tp, hp]:
 		if p >= 100:
 			bonus += 10000
 			perfect += 1
@@ -371,8 +378,9 @@ func on_level_exit() -> void:
 		if perfect > 0:
 			extra += "\nPerfect categories: %d  ->  %d perk pick%s" % [perfect, perfect, "" if perfect == 1 else "s"]
 	hud.show_screen("FLOOR %d CLEARED" % (Game.level_index + 1),
-		"Kills       %3d%%   (%d / %d)\nSecrets     %3d%%   (%d / %d)\nTreasure    %3d%%   (%d / %d)\n\n" % [
-			kp, Game.kills, Game.kills_total, sp, Game.secrets, Game.secrets_total, tp, Game.treasure, Game.treasure_total] +
+		"Kills       %3d%%   (%d / %d)\nSecrets     %3d%%   (%d / %d)\nTreasure    %3d%%   (%d / %d)\nHostages    %3d%%   (%d / %d freed%s)\n\n" % [
+			kp, Game.kills, Game.kills_total, sp, Game.secrets, Game.secrets_total, tp, Game.treasure, Game.treasure_total,
+			hp, Game.hostages, Game.hostages_total, ", %d lost" % Game.hostages_lost if Game.hostages_lost > 0 else ""] +
 		"Time  %d:%02d     Par  %d:%02d\n\n" % [t / 60, t % 60, par / 60, par % 60] +
 		"Bonus  %d\nScore  %d%s\n\nPress ENTER to continue" % [bonus, Game.score, extra])
 
@@ -430,6 +438,15 @@ func _gen_test(n: int) -> void:
 
 func _process(delta: float) -> void:
 	delta = minf(delta, 0.05)
+	for tp in _taps.duplicate():
+		tp[1] -= delta
+		if tp[1] <= 0.0:
+			if Input.is_action_pressed(tp[0]):
+				Input.action_release(tp[0])
+				_taps.erase(tp)
+			else:
+				Input.action_press(tp[0])
+				tp[1] = 0.05
 	match state:
 		"playing":
 			world.tick(delta)

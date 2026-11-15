@@ -11,6 +11,7 @@ extends RefCounted
 ##   Items:   a  ammo     m  medkit   f  ration   t  gem   T  idol   x  extra life
 ##            g  auto rifle   c  rotary cannon   r  red keycard   u  blue keycard
 ##            M  prison map (reveals every non-secret room on the automap)
+##   Hostages: H  a prisoner tied to a post (cut free with the shiv)
 ##   Props:   o  pillar   b  barrel   l  ceiling lamp
 ##   Floor:   .
 
@@ -29,7 +30,7 @@ const LEVELS := [
 			"#......#..o..........o.#.t.t#..#",
 			"#......#..............l#....#.c#",
 			"###D###########D################",
-			"#.....#.......#.#..............#",
+			"#.....#.......#.#............H.#",
 			"#..h.M#.......#.#..............#",
 			"#.f...#...a...#.#....w.........#",
 			"#.....D.......D.D..............#",
@@ -38,7 +39,7 @@ const LEVELS := [
 			"#.......#.....s........#.......B",
 			"#...r...#..............#.......B",
 			"#.......D.....l........#...l...B",
-			"#.......#..............#.......B",
+			"#.......#.H............#.......B",
 			"#..m....#.....s......h.#.......E",
 			"#.......#..............#.......B",
 			"################################",
@@ -56,15 +57,15 @@ const LEVELS := [
 			"#......#..o...o..#..o...o..#",
 			"###D####.........#.........#",
 			"#......WWWWWDWWWWWWWWWD#####",
-			"#.h....#...........#.......#",
+			"#.h....#...........#.....H.#",
 			"#......#.........M.#..u....#",
 			"#..f...D.....s.....D.......#",
 			"#......#...........#....h..#",
 			"#......#..l.....l..#.......#",
 			"####P###...........#########",
 			"#..t.T#####U########.......#",
-			"#..x..#.......#....D...s...#",
-			"#.....#..s....#....#.......#",
+			"#..x..#.......#....D...s..H#",
+			"#.....#..s..H.#....#.......#",
 			"#.c...#.......D....#..m....E",
 			"#.....#.......#....#.......#",
 			"############################",
@@ -79,7 +80,7 @@ const LEVELS := [
 			"###############M...a##############",
 			"###############.a...##############",
 			"#############F###D####F####F######",
-			"############.................#####",
+			"############................H#####",
 			"############..l.......h......#####",
 			"############.................#####",
 			"#####......#...o....o....o...BBBBB",
@@ -92,7 +93,7 @@ const LEVELS := [
 			"############...o....o....o...#####",
 			"############.................#####",
 			"############..l.......h......#####",
-			"############.................#####",
+			"############................H#####",
 			"#############F###D####F####F######",
 			"###############.....##############",
 			"###############m.a.m##############",
@@ -143,7 +144,7 @@ static func validate(level: Dictionary) -> PackedStringArray:
 			if n.x < 0 or n.y < 0 or n.x >= w or n.y >= h or seen.has(n):
 				continue
 			var c: String = rows[n.y][n.x]
-			if WALLS.contains(c) or c == "o" or c == "b":
+			if WALLS.contains(c) or c == "o" or c == "b" or c == "H":
 				continue
 			seen[n] = true
 			queue.append(n)
@@ -155,7 +156,7 @@ static func validate(level: Dictionary) -> PackedStringArray:
 				for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 					if seen.has(Vector2i(x, y) + d):
 						exit_ok = true
-			elif not WALLS.contains(c) and c != "o" and c != "b" and not seen.has(Vector2i(x, y)):
+			elif not WALLS.contains(c) and c != "o" and c != "b" and c != "H" and not seen.has(Vector2i(x, y)):
 				errs.append("tile (%d,%d) '%s' is unreachable" % [x, y, c])
 	if not exit_ok:
 		errs.append("exit switch is unreachable")

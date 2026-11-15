@@ -10,6 +10,8 @@ timeline and saved to blender/scenes/<kind>.blend, then rendered:
   aim (telegraph), fire 0-1 (flash, recoil), pain (with sparks),
   die 0-3, dead          -> front view only (d0)
 
+The hostage is a fellow prisoner tied to a post (bound 0-1, freed 0-1, dead).
+
 Output: assets/enemies/<kind>/<pose>_<frame>_d<dir>.png
 """
 import math
@@ -49,7 +51,7 @@ class Rig:
         self.turn = empty("turntable")
         self.root = empty("root", parent=self.turn)
         self.joints = {}
-        self.flashes = {"flash": [], "launch": [], "sparks": []}
+        self.flashes = {"flash": [], "launch": [], "sparks": [], "ropes": []}
 
     def j(self, name, loc, parent, rot=(0, 0, 0)):
         e = empty(name, loc, parent, rad(*rot))
@@ -413,14 +415,101 @@ def overseer_pose(name, frame, count=4):
     return {}
 
 
+# ================================================================== hostage
+
+def hostage(_kind):
+    """A fellow prisoner chained to an iron post: faded jumpsuit, bare head,
+    rope coils around the chest and wrists. The ropes are a toggle group so
+    the freed frames show them cut."""
+    suit = mat("jumpsuit", (0.62, 0.55, 0.38), rough=0.85, noise=0.35, noise_scale=25)
+    patch = mat("patch", (0.85, 0.82, 0.72), rough=0.7)
+    skin = mat("skin", (0.72, 0.52, 0.4), rough=0.65, noise=0.15, noise_scale=40)
+    hair = mat("hair", (0.12, 0.08, 0.06), rough=0.9)
+    rope = mat("rope", (0.55, 0.42, 0.24), rough=0.95, noise=0.4, noise_scale=60)
+    iron = mat("iron", (0.2, 0.2, 0.22), metal=0.8, rough=0.45, noise=0.3, noise_scale=15)
+    shoe = mat("shoe", (0.1, 0.09, 0.08), rough=0.7)
+
+    rig = Rig()
+    # Iron post the hostage is tied to (static, behind them).
+    cyl("post", 0.035, 0.95, (0, 0.17, 0.475), iron, rig.turn, verts=12)
+    box("post_base", (0.16, 0.16, 0.03), (0, 0.17, 0.015), iron, rig.turn, bevel=0.01)
+    cyl("cut_rope", 0.012, 0.12, (0.03, 0.13, 0.3), rope, rig.turn, verts=8, rot=rad(20, 0, 0))
+
+    hips = rig.j("hips", (0, 0, 0.43), rig.root)
+    box("pelvis", (0.17, 0.11, 0.09), (0, 0, 0.0), suit, hips, bevel=0.02)
+    torso = rig.j("torso", (0, 0, 0.03), hips)
+    box("belly", (0.16, 0.1, 0.1), (0, 0, 0.06), suit, torso, bevel=0.02)
+    box("chest", (0.22, 0.13, 0.15), (0, 0, 0.17), suit, torso, bevel=0.03)
+    box("number", (0.06, 0.01, 0.035), (0.05, -0.068, 0.2), patch, torso, bevel=0.004)
+    for z in (0.12, 0.2):
+        t = torus("rope_coil", 0.135, 0.012, (0, 0.02, z), rope, torso, rot=rad(0, 0, 0))
+        t.scale = (1.0, 0.75, 1.0)
+        rig.flashes["ropes"].append(t)
+
+    head = rig.j("head", (0, 0, 0.26), torso)
+    cyl("neck", 0.03, 0.05, (0, 0, 0.0), skin, head)
+    ball("skull", 0.065, (0, 0, 0.075), skin, head, scale=(0.95, 1.0, 1.12))
+    ball("hair", 0.066, (0, 0.012, 0.1), hair, head, scale=(0.98, 1.0, 0.75))
+    for s in (-1, 1):
+        ball("eye", 0.009, (s * 0.024, -0.058, 0.085), hair, head)
+    gag = box("gag", (0.14, 0.03, 0.022), (0, -0.045, 0.05), patch, head, bevel=0.008)
+    rig.flashes["ropes"].append(gag)
+
+    for s in (-1, 1):
+        tag = "R" if s < 0 else "L"
+        sh = rig.j("shoulder" + tag, (s * 0.13, 0, 0.22), torso)
+        ball("shoulderm", 0.04, (0, 0, 0), suit, sh)
+        cyl("upper", 0.03, 0.14, (0, 0, -0.07), suit, sh)
+        el = rig.j("elbow" + tag, (0, 0, -0.14), sh)
+        cyl("fore", 0.028, 0.13, (0, 0, -0.065), suit, el)
+        ball("hand", 0.03, (0, 0, -0.14), skin, el)
+        if s < 0:
+            w = torus("wrist_rope", 0.04, 0.01, (0, 0, -0.12), rope, el)
+            rig.flashes["ropes"].append(w)
+        th = rig.j("thigh" + tag, (s * 0.06, 0, -0.01), hips)
+        cyl("thighm", 0.042, 0.2, (0, 0, -0.1), suit, th)
+        kn = rig.j("knee" + tag, (0, 0, -0.2), th)
+        cyl("shin", 0.036, 0.18, (0, 0, -0.09), suit, kn)
+        box("shoe", (0.075, 0.12, 0.045), (0, -0.025, -0.2), shoe, kn, bevel=0.012)
+    return rig
+
+
+def hostage_pose(name, frame, count=4):
+    # Kneeling with the hands tied behind the back, slumped against the post.
+    kneel = {"root_loc": (0, 0.02, -0.19), "thighL": (-85, 0, 6), "thighR": (-85, 0, -6),
+             "kneeL": (165, 0, 0), "kneeR": (165, 0, 0),
+             "shoulderL": (35, 0, 12), "elbowL": (25, 0, 0), "shoulderR": (35, 0, -12), "elbowR": (25, 0, 0)}
+    if name == "bound":
+        pose = dict(kneel)
+        pose["torso"] = (8 + 5 * frame, 0, -4 + 8 * frame)
+        pose["head"] = (18 - 6 * frame, 0, 10 - 16 * frame)
+        pose["ropes"] = True
+        return pose
+    if name == "freed":
+        # Standing up, arms raised and waving in relief.
+        wave = 25 * frame
+        return {"shoulderL": (0, -150 + wave, 0), "elbowL": (0, -25, 0),
+                "shoulderR": (0, 150 - wave, 0), "elbowR": (0, 25, 0),
+                "torso": (-6, 0, 0), "head": (-12, 0, 0), "root_loc": (0, 0, 0.01 * frame)}
+    if name == "dead":
+        return {"root_rot": (0, 90, 0), "root_loc": (-0.47, -0.2, 0.06), "thighL": (-15, 0, 0), "kneeL": (25, 0, 0),
+                "torso": (-5, 0, 0), "head": (-10, 0, 25), "shoulderR": (30, 0, 0), "shoulderL": (30, 0, 0),
+                "ropes": True}
+    return {}
+
+
 KINDS = {
     "sentry": (humanoid, humanoid_pose),
     "warden": (humanoid, humanoid_pose),
     "hound": (hound, hound_pose),
     "overseer": (overseer, overseer_pose),
+    "hostage": (hostage, hostage_pose),
 }
 
 EXTRA_SEQ = {"overseer": [("launch", 0, 24, False)]}
+# Hostages don't fight: two struggling frames, two freed frames and a body.
+SEQ_OVERRIDE = {"hostage": [("bound", 0, 1, False), ("bound", 1, 4, False), ("freed", 0, 10, False),
+                            ("freed", 1, 13, False), ("dead", 0, 20, False)]}
 
 
 def build(only=()):
@@ -433,7 +522,7 @@ def build(only=()):
             rig.turn.scale = (0.92, 0.92, 0.92)
         sc = bpy.context.scene
         out = os.path.join(ASSETS_DIR, "enemies", kind)
-        seq = make_seq(kind) + EXTRA_SEQ.get(kind, [])
+        seq = SEQ_OVERRIDE.get(kind) or make_seq(kind) + EXTRA_SEQ.get(kind, [])
         walk_count = WALK_FRAMES.get(kind, 8)
         for pose, frame, kf, directional in seq:
             sc.frame_set(kf)

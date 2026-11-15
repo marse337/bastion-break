@@ -15,6 +15,8 @@ const PUSH_CHARS := {"P": 0, "Q": 1}
 const TREASURE := ["gem", "idol", "life"]
 const DIRS := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 const INF := 1 << 20
+const HOSTAGE_SCRIP := 5
+const HOSTAGE_SCORE := 1000
 const KILL_SCRIP := {"sentry": 1, "hound": 1, "warden": 3, "overseer": 40}
 const DAMAGE_SCALE := [0.5, 1.0, 1.35]
 
@@ -45,6 +47,7 @@ var field := PackedInt32Array()
 var doors := {}
 var pushwalls: Array[PushWall] = []
 var enemies: Array[Enemy] = []
+var hostages: Array[Hostage] = []
 var items: Array[Dictionary] = []
 var reservations := {}
 var player: Player
@@ -98,6 +101,12 @@ func build(level: Dictionary) -> void:
 				door_specs.append([t, DOOR_CHARS[c]])
 			elif c == "@":
 				start = p
+			elif c == "H":
+				var hg := Hostage.new()
+				add_child(hg)
+				hg.setup(self, t)
+				hostages.append(hg)
+				blockers[_i(t)] = 1
 			elif ENEMY_CHARS.has(c):
 				enemy_specs.append([t, ENEMY_CHARS[c]])
 			elif ITEM_CHARS.has(c):
@@ -132,6 +141,7 @@ func build(level: Dictionary) -> void:
 	_compute_rooms(Vector2i(floori(start.x), floori(start.y)))
 	Game.kills_total = enemies.size()
 	Game.secrets_total = pushwalls.size()
+	Game.hostages_total = hostages.size()
 	Game.treasure_total = 0
 	for it in items:
 		if it.type in TREASURE:
@@ -548,6 +558,8 @@ func tick(delta: float) -> void:
 			_tick_pushwall(pw, delta)
 	for e in enemies:
 		e.tick(delta)
+	for hg in hostages:
+		hg.tick(delta)
 	_tick_projectiles(delta)
 	_tick_effects(delta)
 	if not player.dead:
@@ -626,16 +638,12 @@ func player_use() -> void:
 		return
 	for pw in pushwalls:
 		if pw.state == 0 and pw.origin == t:
-			if _can_push_into(t + dir):
-				pw.dir = dir
-				pw.state = 1
-				Game.secrets += 1
-				play_sfx("push", Vector2(t.x + 0.5, t.y + 0.5))
-				play_sfx("secret")
-				Game.message.emit("You found a secret!")
-			else:
-				play_sfx("denied")
+			Game.message.emit("This wall sounds hollow... pry it open with your SHIV")
 			return
+	var hg := _find_hostage(1.4, true)
+	if hg != null:
+		Game.message.emit("Cut the ropes with your SHIV to free them")
+		return
 	if in_bounds(t) and walls[_i(t)] == EXIT_TEX and not exited:
 		exited = true
 		_wall_mats[EXIT_TEX].albedo_texture = Tex.tex("exit_on")
@@ -644,10 +652,18 @@ func player_use() -> void:
 
 
 ## Hitscan attack. The shiv is silent; guns wake up nearby enemies.
+## The shiv also cuts hostages free and pries open secret walls.
 func player_attack(w: int) -> void:
 	if w == Game.Weapon.SHIV:
 		play_sfx("shiv")
 		var e := _find_target(1.4)
+		var hg := _find_hostage(1.4, true)
+		if hg != null and (e == null or hg.pos.distance_to(player.pos) < e.pos.distance_to(player.pos)):
+			_free_hostage(hg)
+			return
+		if e == null:
+			_shiv_wall()
+			return
 		if e != null:
 			if Game.has_perk("ghost") and e.state == Enemy.IDLE:
 				e.take_damage(e.hp + 1)
@@ -660,6 +676,10 @@ func player_attack(w: int) -> void:
 	play_sfx(["", "sidearm", "rifle", "rotary"][w])
 	make_noise(player_tile())
 	var target := _find_target(30.0)
+	var hit_hostage := _find_hostage(30.0, false)
+	if hit_hostage != null and (target == null or hit_hostage.pos.distance_to(player.pos) < target.pos.distance_to(player.pos)):
+		_kill_hostage(hit_hostage)
+		return
 	if target == null:
 		return
 	var d := target.pos.distance_to(player.pos)
@@ -693,6 +713,81 @@ func _find_target(max_range: float) -> Enemy:
 			best = e
 			bestd = d
 	return best
+
+
+## The bound or freed hostage in the player's line of fire, if any.
+func _find_hostage(max_range: float, bound_only: bool) -> Hostage:
+	var best: Hostage = null
+	var bestd := INF * 1.0
+	for hg in hostages:
+		if not (hg.is_bound() if bound_only else hg.is_present()):
+			continue
+		var to := hg.pos - player.pos
+		var d := to.length()
+		if d > max_range or d < 0.01:
+			continue
+		var off := absf(angle_difference(player.angle, to.angle()))
+		if off <= atan2(0.3, d) + (0.15 if bound_only else 0.0) and d < bestd and has_los(player.pos, hg.pos):
+			best = hg
+			bestd = d
+	return best
+
+
+## Shiv against a wall: pries a secret wall loose.
+func _shiv_wall() -> void:
+	var f := player.forward()
+	var dir := Vector2i(int(signf(f.x)), 0) if absf(f.x) > absf(f.y) else Vector2i(0, int(signf(f.y)))
+	var t := player_tile() + dir
+	# Only when the player is close enough for the blade to reach.
+	var face := Vector2(t.x + 0.5, t.y + 0.5) - Vector2(dir) * 0.5
+	if absf((face - player.pos).dot(Vector2(dir))) > 0.75:
+		return
+	for pw in pushwalls:
+		if pw.state == 0 and pw.origin == t:
+			if _can_push_into(t + dir):
+				pw.dir = dir
+				pw.state = 1
+				Game.secrets += 1
+				play_sfx("push", Vector2(t.x + 0.5, t.y + 0.5))
+				play_sfx("secret")
+				Game.message.emit("You pried the wall loose - a secret!")
+			else:
+				play_sfx("denied")
+			return
+
+
+func _free_hostage(hg: Hostage) -> void:
+	hg.free_hostage()
+	Game.hostages += 1
+	Game.add_score(HOSTAGE_SCORE)
+	Game.earn_scrip(HOSTAGE_SCRIP)
+	play_sfx("secret")
+	main.hud.flash_pickup()
+	if randf() < 0.5:
+		Game.ammo = mini(Game.max_ammo(), Game.ammo + 6)
+		Game.message.emit("Hostage freed! They slip you 6 rounds")
+	else:
+		Game.health = mini(Game.MAX_HEALTH, Game.health + 15)
+		Game.message.emit("Hostage freed! They patch you up (+15 health)")
+
+
+func _kill_hostage(hg: Hostage) -> void:
+	var was_bound := hg.is_bound()
+	hg.kill()
+	blockers[_i(hg.tile)] = 0
+	_field_timer = 0.0
+	Game.hostages_lost += 1
+	Game.score = maxi(0, Game.score - 2000)
+	play_sfx("die", hg.pos)
+	if was_bound:
+		Game.message.emit("You shot a hostage! (-2000)")
+	else:
+		Game.message.emit("You shot a freed hostage! (-2000)")
+
+
+func on_hostage_gone(hg: Hostage) -> void:
+	blockers[_i(hg.tile)] = 0
+	_field_timer = 0.0
 
 
 func damage_player(n: int) -> void:

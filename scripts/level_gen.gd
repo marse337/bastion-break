@@ -12,7 +12,8 @@ extends RefCounted
 ##     only where the 2-tile slide leaves space to step around the block;
 ##   * rooms next to the start get sentries facing away from their door, so
 ##     the opening kills can be silent shiv backstabs;
-##   * big rooms get pillars to break line of sight.
+##   * big rooms get pillars to break line of sight;
+##   * hostages are tied up in rooms away from the start.
 ## Output uses the same text format as levels.gd, so the validator and world
 ## builder work on it unchanged.
 
@@ -21,13 +22,13 @@ const THEMES := {
 		"name": "Holding Cells", "size": Vector2i(38, 28), "min_room": 3, "max_room": 7,
 		"wall": "#", "accent": "F", "accent_rate": 0.04, "key": "red", "loops": 0.2,
 		"enemies": [["s", 0.75], ["h", 0.15], ["w", 0.1]], "density": 0.04, "max_per_room": 2,
-		"secret_loot": ["x", "g"], "par": 150, "min_wardens": 0,
+		"secret_loot": ["x", "g"], "par": 150, "min_wardens": 0, "hostages": 2,
 	},
 	"foundry": {
 		"name": "The Foundry", "size": Vector2i(44, 32), "min_room": 5, "max_room": 11,
 		"wall": "B", "accent": "W", "accent_rate": 0.3, "key": "blue", "loops": 0.55,
 		"enemies": [["s", 0.5], ["h", 0.25], ["w", 0.25]], "density": 0.04, "max_per_room": 4,
-		"secret_loot": ["c", "x"], "par": 180, "min_wardens": 2,
+		"secret_loot": ["c", "x"], "par": 180, "min_wardens": 2, "hostages": 3,
 	},
 }
 const KEY_CHARS := {"red": ["R", "r"], "blue": ["U", "u"], "gold": ["G", "k"]}
@@ -202,6 +203,20 @@ func _build(theme: String, seed_value: int, need_secret: bool) -> Dictionary:
 		if rng.randf() < (0.5 if dead_end else 0.22): _put(r, "t")
 		if rng.randf() < 0.07: _put(r, "T")
 		if i == exit_room: _put(r, "m")
+	# --- hostages: held in guarded rooms away from the start (never the
+	# exit or the stash). They block their tile, so keep them off doorways.
+	var hostage_rooms := []
+	for i in leaves.size():
+		if not (i in [start, exit_room, secret_room]) and dist[i] >= 1:
+			hostage_rooms.append(i)
+	for _k in int(th.hostages):
+		if hostage_rooms.is_empty():
+			break
+		var hi: int = hostage_rooms.pop_at(rng.randi_range(0, hostage_rooms.size() - 1))
+		var ht := _free_tile(leaves[hi])
+		if ht.x >= 0:
+			g[ht.y][ht.x] = "H"
+			blocked[ht] = true
 	if secret_room >= 0:
 		for c in th.secret_loot + ["t", "t", "T"]:
 			_put(leaves[secret_room], c)

@@ -34,7 +34,7 @@ Godot_v4.7-stable_mono_win64.exe --path .
 | Turn | Mouse |
 | Run | Shift |
 | Fire | Left click / Ctrl |
-| Open doors, push secrets, flip exit switch | E / Space / right click |
+| Open doors, flip exit switch | E / Space / right click |
 | Weapons | 1-4 / mouse wheel |
 | Map (large / small) | Tab |
 | HD / retro pixels | F2 (saved between sessions) |
@@ -47,7 +47,7 @@ Godot_v4.7-stable_mono_win64.exe --path .
   - **Floors:** Floors 1 and 2 (Holding Cells / red keycard, The Foundry / blue keycard) are generated fresh every run. Floor 3 is the hand-made Overseer arena.
   - **Lives:** you start with 1 life (2 with Spare Clone). Dying with a spare life respawns you at the floor start with your gear, and dead enemies stay dead. With no lives left, the run is over.
   - **Iron Scrip:** earned from kills, treasure, cleared floors, perfect tallies and beating the boss. It's saved as you earn it, so a failed run still pays.
-  - **Perks:** each perfect tally category (100% kills, secrets or treasure, or beating par) earns a pick-1-of-3 perk at the Smuggler's Terminal for the rest of the run.
+  - **Perks:** each perfect tally category (100% kills, secrets, treasure or hostages, or beating par) earns a pick-1-of-3 perk at the Smuggler's Terminal for the rest of the run.
 - **Classic campaign (C on the title screen):** the three hand-made floors with classic rules: 3 lives, and dying restarts the floor with a Sidearm and 10 rounds.
 
 ## Procedural floors (`scripts/level_gen.gd`)
@@ -63,7 +63,9 @@ Godot_v4.7-stable_mono_win64.exe --path .
 - **Noise:** gunfire alerts enemies through open space and open doors. Closed doors block the sound, and the shiv makes none.
 - **Enemies:** Sentry (basic gunner, drops ammo), Hound (fast melee and can't open doors), Warden (armored burst-fire, drops the Auto Rifle).
 - **Boss:** Floor 3's Overseer has a rotary-cannon arm and shoulder launchers that fire dodgeable plasma bolts. It sees in all directions and drops the gold keycard to the exit vault. A health bar appears once it spots you.
-- **Secrets:** some walls slide back when you use them. Secret walls have faint scrape marks and a cracked seam, so look closely. The tally shows found / total for kills, secrets and treasure.
+- **Secrets:** some walls hide a stash. Secret walls have faint scrape marks and a cracked seam. Stab one with the **shiv** to pry it loose (pressing USE on it only tells you it sounds hollow).
+- **Hostages:** fellow prisoners are tied to posts around each floor (2 on generated Cells floors, 3 on Foundry floors, 2–3 on each hand-made floor). Cut them free with the **shiv** for +1,000 points and 5 Iron Scrip, and they hand you 6 rounds or patch you up for 15 health. Stray gunfire kills them (−2,000 points). Tied-up hostages show as pink squares on the map in rooms you can see.
+- **Tally:** shows found / total for kills, secrets, treasure and hostages freed. Each 100% category (and beating par) is worth a bonus and, in runs, a perk pick.
 - **Automap:** the top-right map shows the rooms you've entered. Pick up a floor's **prison map** to reveal every room, with unentered ones shown in blue. Secret rooms stay hidden until you find them.
 - **Scoring:** treasure, kills, an extra life every 50,000 points, and end-of-floor bonuses for 100% kills, secrets and treasure plus time under par.
 
@@ -74,6 +76,7 @@ Godot_v4.7-stable_mono_win64.exe --path .
 | `scripts/world.gd` | Builds a level from text and runs doors, secrets, pickups, hitscan and noise |
 | `scripts/player.gd` | Movement, collision, weapons |
 | `scripts/enemy.gd` | Enemy AI state machine and stats table |
+| `scripts/hostage.gd` | Tied-up prisoners you cut free with the shiv |
 | `scripts/door.gd` | Sliding doors |
 | `scripts/levels.gd` | **Level maps** (ASCII; legend at the top of the file) and the validator |
 | `scripts/textures.gd` | Procedural pixel art |
@@ -102,7 +105,7 @@ Output goes to `assets/`. After re-rendering, open the project in Godot (or run
 falls back to its old procedural art.
 
 ## Debug options
-Pass these after `--`. For example:
+Pass these after `--`. `--tap=action@seconds,...` presses an input action once at a set time (for example `--tap=weapon_1@0.4,fire@0.7`). For example:
 `--autostart --level=3 --god --alert --arsenal --retro --pos=9.5,3.5,0 --shot=out.png --shot-after=5 --quit`.
 `--validate` checks every map for unreachable tiles, bad door frames and an
 unreachable exit.
