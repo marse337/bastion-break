@@ -210,21 +210,23 @@ func show_cell() -> void:
 	_free_world()
 	state = "cell"
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	var lines := "Iron Scrip: %d\n\n" % Game.scrip
-	for i in Game.UPGRADE_ORDER.size():
-		var id: String = Game.UPGRADE_ORDER[i]
-		var u: Array = Game.UPGRADES[id]
-		var lv := int(Game.upgrades.get(id, 0))
-		var cost := Game.upgrade_cost(id)
-		var status := "OWNED" if cost < 0 else "%d scrip" % cost
-		var level_text := " lv %d" % lv if (u[2] as Array).size() > 1 and lv > 0 else ""
-		lines += "%d  %s%s  [%s]   %s\n" % [i + 1, u[0], level_text, status, u[1]]
 	var proto: Array = Game.PROTOCOLS[Game.protocol_choice]
-	lines += "\nPROTOCOL (P to change):  %s\n%s\n" % [proto[0].to_upper(), proto[1]]
+	var header := "Iron Scrip: %d          Protocol: %s" % [Game.scrip, proto[0].to_upper()]
+	var foot: String = proto[1]
 	if Game.protocol_choice == "daily":
-		lines += "Today's best: %d\n" % Game.daily_best_today()
-	lines += "\n1-6 buy     P protocol     ENTER start     Esc back"
-	hud.show_screen("CELL 4471", lines, true)
+		foot += "  Today's best: %d" % Game.daily_best_today()
+	if not TouchControls.active:
+		foot += "\n1-6 or click: buy     P protocol     ENTER start     Esc back"
+	hud.show_cell(header, foot)
+	if not hud.upgrade_cards.picked.is_connected(_on_upgrade_card):
+		hud.upgrade_cards.picked.connect(_on_upgrade_card)
+
+
+func _on_upgrade_card(i: int) -> void:
+	if state != "cell":
+		return
+	play_sfx("weapon" if Game.buy_upgrade(Game.UPGRADE_ORDER[i]) else "denied")
+	show_cell()
 
 
 func _show_perk_choice() -> void:

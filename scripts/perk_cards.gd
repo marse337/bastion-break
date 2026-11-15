@@ -1,46 +1,22 @@
 class_name PerkCards
-extends Control
+extends SpriteCards
 ## The Smuggler's Terminal perk picker: one card per offered perk, each with
 ## a short looping scene built from the game's own sprites that shows what
 ## the perk does, above its name and description.
-
-signal picked(index: int)
 
 const CARD_W := 146.0
 const CARD_H := 166.0
 const GAP := 8.0
 const SCENE_H := 96.0
-const LOOP := 3.0
-
-const C_PANEL := Color(0.08, 0.09, 0.13, 0.96)
-const C_SCENE := Color(0.02, 0.025, 0.04)
-const C_EDGE := Color(0.3, 0.35, 0.45)
-const C_HOT := Color(1, 0.55, 0.15)
-const C_GOOD := Color(0.4, 1.0, 0.5)
-const C_GOLD := Color(1.0, 0.8, 0.25)
-const C_DIM := Color(0.55, 0.58, 0.65)
-const C_BAD := Color(1.0, 0.3, 0.25)
 
 var perks: Array[String] = []
-var _t := 0.0
-var _hover := -1
-var _labels: Array[Label] = []
-var _font: Font
-
-
-func _ready() -> void:
-	mouse_filter = Control.MOUSE_FILTER_STOP
-	_font = ThemeDB.fallback_font
-	visible = false
 
 
 func show_perks(ids: Array[String]) -> void:
 	perks = ids
 	_t = 0.0
 	_hover = -1
-	for l in _labels:
-		l.queue_free()
-	_labels.clear()
+	_clear_labels()
 	var total := CARD_W * ids.size() + GAP * (ids.size() - 1)
 	size = Vector2(total, CARD_H)
 	position.x = (Hud.W - total) / 2.0
@@ -49,7 +25,7 @@ func show_perks(ids: Array[String]) -> void:
 		var x := i * (CARD_W + GAP)
 		var name_l := _label(Vector2(x + 4, SCENE_H + 8), Vector2(CARD_W - 8, 14), 10, C_HOT)
 		name_l.text = "%d  %s" % [i + 1, p[0]]
-		var desc := _label(Vector2(x + 6, SCENE_H + 24), Vector2(CARD_W - 12, CARD_H - SCENE_H - 28), 8, Color(0.85, 0.88, 0.95))
+		var desc := _label(Vector2(x + 6, SCENE_H + 24), Vector2(CARD_W - 12, CARD_H - SCENE_H - 28), 8, C_TEXT)
 		desc.text = p[1]
 		desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		desc.vertical_alignment = VERTICAL_ALIGNMENT_TOP
@@ -57,56 +33,20 @@ func show_perks(ids: Array[String]) -> void:
 	queue_redraw()
 
 
-func _label(p: Vector2, s: Vector2, font_size: int, c: Color) -> Label:
-	var l := Label.new()
-	l.position = p
-	l.size = s
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.add_theme_font_size_override("font_size", font_size)
-	l.add_theme_color_override("font_color", c)
-	l.add_theme_color_override("font_outline_color", Color.BLACK)
-	l.add_theme_constant_override("outline_size", 3)
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(l)
-	_labels.append(l)
-	return l
+func _card_count() -> int:
+	return perks.size()
 
 
-func _process(delta: float) -> void:
-	if visible:
-		_t += delta
-		queue_redraw()
-
-
-func _card_at(p: Vector2) -> int:
-	for i in perks.size():
-		if Rect2(i * (CARD_W + GAP), 0, CARD_W, CARD_H).has_point(p):
-			return i
-	return -1
-
-
-func _gui_input(event: InputEvent) -> void:
-	if event is InputEventMouseMotion:
-		_hover = _card_at(event.position)
-	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		var i := _card_at(event.position)
-		if i >= 0:
-			picked.emit(i)
-			accept_event()
+func _card_rect(i: int) -> Rect2:
+	return Rect2(i * (CARD_W + GAP), 0, CARD_W, CARD_H)
 
 
 func _draw() -> void:
 	for i in perks.size():
-		var x := i * (CARD_W + GAP)
-		var hot := i == _hover
-		draw_rect(Rect2(x, 0, CARD_W, CARD_H), C_PANEL)
-		draw_rect(Rect2(x, 0, CARD_W, CARD_H), C_HOT if hot else C_EDGE, false, 2.0 if hot else 1.0)
-		var o := Vector2(x + 3, 3)
+		var r := _card_rect(i)
+		var o := r.position + Vector2(3, 3)
 		var box := Rect2(o, Vector2(CARD_W - 6, SCENE_H))
-		draw_rect(box, C_SCENE)
-		# Floor strip so the sprites stand on something.
-		draw_rect(Rect2(o + Vector2(0, SCENE_H - 14), Vector2(CARD_W - 6, 14)), Color(0.07, 0.07, 0.09))
-		draw_line(o + Vector2(0, SCENE_H - 14), o + Vector2(CARD_W - 6, SCENE_H - 14), Color(0.16, 0.17, 0.2))
+		_card_frame(r, box, i == _hover)
 		# Each card runs half a beat behind the last so they don't move in lockstep.
 		var t := fmod(_t + i * 0.45, LOOP)
 		match perks[i]:
@@ -123,68 +63,8 @@ func _draw() -> void:
 		draw_rect(box, C_EDGE, false, 1.0)
 
 
-# ---------------------------------------------------------------- helpers
-
-## Draws a sprite whose art sits on the bottom edge, centred on `x`.
-func _spr(t: Texture2D, x: float, bottom: float, h: float, tint := Color.WHITE, flip := false) -> void:
-	var w := h * t.get_width() / float(t.get_height())
-	var r := Rect2(x - w / 2.0, bottom - h, w, h)
-	if flip:
-		r.position.x += w
-		r.size.x = -w
-	draw_texture_rect(t, r, false, tint)
-
-
-static var _used: Dictionary = {}
-
-
-## Item sprite cropped to its visible pixels, so small pickups read clearly.
-func _item(tex_name: String, x: float, bottom: float, h: float, tint := Color.WHITE) -> void:
-	var t := Tex.tex(tex_name)
-	if not _used.has(tex_name):
-		var img := t.get_image()
-		_used[tex_name] = img.get_used_rect() if img != null else Rect2i(Vector2i.ZERO, t.get_size())
-	var src: Rect2i = _used[tex_name]
-	var w := h * src.size.x / float(src.size.y)
-	draw_texture_rect_region(t, Rect2(x - w / 2.0, bottom - h, w, h), Rect2(src), tint)
-
-
-func _txt(s: String, p: Vector2, fsize: int, c: Color, strike := false) -> void:
-	var w := _font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize).x
-	var pos := p - Vector2(w / 2.0, 0)
-	draw_string_outline(_font, pos, s, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, 3, Color.BLACK)
-	draw_string(_font, pos, s, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, c)
-	if strike:
-		draw_line(pos + Vector2(-1, -fsize * 0.35), pos + Vector2(w + 1, -fsize * 0.35), c, 1.0)
-
-
-func _bar(p: Vector2, w: float, h: float, frac: float, c: Color) -> void:
-	draw_rect(Rect2(p, Vector2(w, h)), Color(0.05, 0.02, 0.02))
-	draw_rect(Rect2(p + Vector2(1, 1), Vector2((w - 2) * clampf(frac, 0, 1), h - 2)), c)
-
-
-## 0 -> 1 as t goes from a to b.
-func _k(t: float, a: float, b: float) -> float:
-	return clampf((t - a) / (b - a), 0.0, 1.0)
-
-
-## Text that floats up and fades out after `start`.
-func _pop(s: String, p: Vector2, t: float, start: float, c: Color, fsize := 10) -> void:
-	if t < start:
-		return
-	var k := _k(t, start, start + 1.2)
-	var col := c
-	col.a = 1.0 - _k(t, start + 0.9, start + 1.4)
-	_txt(s, p - Vector2(0, k * 12), fsize, col)
-
-
 func _floor(o: Vector2) -> float:
 	return o.y + SCENE_H - 6
-
-
-func _flash(p: Vector2, r: float) -> void:
-	draw_circle(p, r, Color(1, 0.85, 0.4, 0.9))
-	draw_circle(p, r * 0.5, Color(1, 1, 0.85))
 
 
 # ---------------------------------------------------------------- scenes

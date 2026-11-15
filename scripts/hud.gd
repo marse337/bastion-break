@@ -25,6 +25,7 @@ var screen_title: Label
 var screen_body: Label
 var screen_foot: Label
 var perk_cards: PerkCards
+var upgrade_cards: UpgradeCards
 var _world: World = null
 var dmg_alpha := 0.0
 var pick_alpha := 0.0
@@ -91,6 +92,9 @@ func _ready() -> void:
 	perk_cards = PerkCards.new()
 	perk_cards.position.y = 58
 	screen.add_child(perk_cards)
+	upgrade_cards = UpgradeCards.new()
+	upgrade_cards.position.y = 54
+	screen.add_child(upgrade_cards)
 	screen.visible = false
 
 
@@ -178,7 +182,11 @@ func show_screen(title: String, body: String, compact := false) -> void:
 	screen_body.position.y = 50 if compact else 80
 	screen_body.size.y = 215 if compact else 180
 	perk_cards.visible = false
+	upgrade_cards.visible = false
 	screen_foot.text = ""
+	screen_foot.position.y = H - 42
+	screen_foot.size.y = 14
+	screen_foot.add_theme_font_size_override("font_size", 10)
 	screen.visible = true
 
 
@@ -190,6 +198,21 @@ func show_perks(subtitle: String, ids: Array[String], footer: String) -> void:
 	perk_cards.show_perks(ids)
 
 
+## The Cell shop: a one-line header, the six upgrade cards, then the
+## protocol and key help underneath.
+func show_cell(header: String, footer: String) -> void:
+	var keep := upgrade_cards.visible
+	show_screen("CELL 4471", header, true)
+	screen_body.position.y = 38
+	screen_foot.text = footer
+	screen_foot.position.y = 210
+	screen_foot.size.y = 30
+	screen_foot.add_theme_font_size_override("font_size", 8)
+	upgrade_cards.visible = keep
+	upgrade_cards.show_upgrades()
+
+
 func hide_screen() -> void:
 	screen.visible = false
 	perk_cards.visible = false
+	upgrade_cards.visible = false
