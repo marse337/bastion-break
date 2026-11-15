@@ -23,6 +23,8 @@ const BOSS_W := 220.0
 var screen: ColorRect
 var screen_title: Label
 var screen_body: Label
+var screen_foot: Label
+var perk_cards: PerkCards
 var _world: World = null
 var dmg_alpha := 0.0
 var pick_alpha := 0.0
@@ -84,6 +86,11 @@ func _ready() -> void:
 	screen_body = _label(screen, Vector2(20, 80), Vector2(W - 40, 180), 11, Color(0.85, 0.88, 0.95))
 	screen_body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	screen_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	screen_foot = _label(screen, Vector2(0, H - 42), Vector2(W, 14), 10, Color(0.85, 0.88, 0.95))
+	screen_foot.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	perk_cards = PerkCards.new()
+	perk_cards.position.y = 58
+	screen.add_child(perk_cards)
 	screen.visible = false
 
 
@@ -170,8 +177,19 @@ func show_screen(title: String, body: String, compact := false) -> void:
 	screen_body.add_theme_font_size_override("font_size", 9 if compact else 11)
 	screen_body.position.y = 50 if compact else 80
 	screen_body.size.y = 215 if compact else 180
+	perk_cards.visible = false
+	screen_foot.text = ""
 	screen.visible = true
+
+
+## The perk picker: title, one line of context, then animated cards.
+func show_perks(subtitle: String, ids: Array[String], footer: String) -> void:
+	show_screen("SMUGGLER'S TERMINAL", subtitle, true)
+	screen_body.position.y = 40
+	screen_foot.text = footer
+	perk_cards.show_perks(ids)
 
 
 func hide_screen() -> void:
 	screen.visible = false
+	perk_cards.visible = false

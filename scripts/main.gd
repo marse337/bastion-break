@@ -234,12 +234,16 @@ func _show_perk_choice() -> void:
 		pending_perks = 0
 		_next_level()
 		return
-	var body := "Your clean work earned a contraband perk (%d left to pick).\n\n" % pending_perks
-	for i in perk_choices.size():
-		var p: Array = Game.PERKS[perk_choices[i]]
-		body += "%d  %s\n     %s\n\n" % [i + 1, p[0], p[1]]
-	body += "Press 1 - %d to choose" % perk_choices.size()
-	hud.show_screen("SMUGGLER'S TERMINAL", body, true)
+	var sub := "Your clean work earned a contraband perk (%d left to pick)." % pending_perks
+	var foot := "" if TouchControls.active else "Press 1 - %d or click a card" % perk_choices.size()
+	hud.show_perks(sub, perk_choices, foot)
+	if not hud.perk_cards.picked.is_connected(_on_perk_card):
+		hud.perk_cards.picked.connect(_on_perk_card)
+
+
+func _on_perk_card(i: int) -> void:
+	if state == "perk":
+		_pick_perk(i)
 
 
 func _pick_perk(i: int) -> void:
