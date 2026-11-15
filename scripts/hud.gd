@@ -17,10 +17,13 @@ var key_blue: ColorRect
 var key_gold: ColorRect
 var boss_panel: Control
 var boss_fill: ColorRect
+var boss_label: Label
+var score_cap: Label
 const BOSS_W := 220.0
 var screen: ColorRect
 var screen_title: Label
 var screen_body: Label
+var _world: World = null
 var dmg_alpha := 0.0
 var pick_alpha := 0.0
 var death_alpha := 0.0
@@ -54,6 +57,8 @@ func _ready() -> void:
 		var cap := _label(root, Vector2(x, BAR_Y + 4), Vector2(w, 10), 8, Color(0.55, 0.65, 0.8))
 		cap.text = s[0]
 		cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		if s[0] == "SCORE":
+			score_cap = cap
 		var val := _label(root, Vector2(x, BAR_Y + 14), Vector2(w, 22), 16 if s[0] != "WEAPON" else 11, Color.WHITE)
 		val.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		val.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -66,9 +71,9 @@ func _ready() -> void:
 	boss_panel.position = Vector2((W - BOSS_W) / 2.0, 24)
 	boss_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(boss_panel)
-	var bl := _label(boss_panel, Vector2(0, -2), Vector2(BOSS_W, 10), 8, Color(1, 0.75, 0.6))
-	bl.text = "THE OVERSEER"
-	bl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	boss_label = _label(boss_panel, Vector2(0, -2), Vector2(BOSS_W, 10), 8, Color(1, 0.75, 0.6))
+	boss_label.text = "THE OVERSEER"
+	boss_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_rect(boss_panel, Vector2(0, 10), Vector2(BOSS_W, 7), Color(0.05, 0.02, 0.02, 0.85))
 	boss_fill = _rect(boss_panel, Vector2(1, 11), Vector2(BOSS_W - 2, 5), Color(0.85, 0.12, 0.08))
 	boss_panel.visible = false
@@ -111,18 +116,26 @@ func refresh() -> void:
 	values.LIVES.text = str(Game.lives)
 	values.HEALTH.text = "%d%%" % Game.health
 	values.HEALTH.add_theme_color_override("font_color", Color(1, 0.3, 0.25) if Game.health <= 25 else Color.WHITE)
-	values.AMMO.text = str(Game.ammo)
-	values.WEAPON.text = Game.WEAPON_NAMES[Game.current_weapon]
+	var calib := _world != null and _world.range_state == 1
+	values.AMMO.text = ("%d CAL" % _world.range_ammo) if calib else str(Game.ammo)
+	values.WEAPON.text = Game.weapon_name()
+	score_cap.text = "SCORE  x%.1f" % Game.score_mult if Game.is_protocol("daily") else "SCORE"
 	key_red.color = Color(0.95, 0.15, 0.1) if Game.keys.red else Color(0.2, 0.08, 0.08)
 	key_blue.color = Color(0.2, 0.45, 1.0) if Game.keys.blue else Color(0.07, 0.09, 0.2)
 	key_gold.color = Color(1.0, 0.78, 0.15) if Game.keys.gold else Color(0.2, 0.16, 0.05)
 
 
 func tick(delta: float, world: World) -> void:
+	_world = world
 	minimap.tick(delta, world)
 	var b: Enemy = world.boss if world != null else null
+	if world != null and (b == null or not b.is_alive()) and world.crimson != null and world.crimson.is_alive():
+		b = world.crimson
 	boss_panel.visible = b != null and b.state != Enemy.IDLE and b.is_alive()
 	if boss_panel.visible:
+		boss_label.text = b.display_name()
+		if world.range_state == 1:
+			boss_panel.visible = false
 		boss_fill.size.x = (BOSS_W - 2.0) * clampf(float(b.hp) / b.max_hp, 0.0, 1.0)
 	dmg_alpha = maxf(0.0, dmg_alpha - delta * 1.8)
 	pick_alpha = maxf(0.0, pick_alpha - delta * 2.5)

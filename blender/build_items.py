@@ -219,12 +219,112 @@ def blast(frame):
     return build
 
 
+def mod_crate():
+    """Prototype mod crate: a stencilled case with a glowing lock strip."""
+    r = _root(tilt=12, scale=2.2)
+    case = mat("modcase", (0.16, 0.18, 0.22), metal=0.5, rough=0.45, noise=0.2, noise_scale=20)
+    trim = mat("modtrim", (0.85, 0.55, 0.1), metal=0.6, rough=0.4)
+    box("case", (0.3, 0.17, 0.16), (0, 0, 0.08), case, r, bevel=0.015)
+    for x in (-0.15, 0.15):
+        box("corner", (0.03, 0.18, 0.17), (x, 0, 0.085), trim, r, bevel=0.006)
+    box("lid", (0.31, 0.18, 0.02), (0, 0, 0.165), case, r, bevel=0.006)
+    box("lock", (0.09, 0.01, 0.035), (0, -0.09, 0.11), glow("modglow", (0.3, 0.9, 1.0), 4), r)
+    for i in range(3):
+        box("stencil", (0.018, 0.005, 0.05), (-0.09 + i * 0.03, -0.088, 0.06), trim, r, rot=rad(0, 25, 0))
+
+
+def scrip_cache():
+    """Contraband cache: a strapped bundle of Iron Scrip tokens."""
+    r = _root(tilt=20, scale=2.4)
+    iron = mat("scrip", (0.45, 0.47, 0.5), metal=0.9, rough=0.35, noise=0.2, noise_scale=30)
+    rust = mat("scriprust", (0.55, 0.28, 0.12), metal=0.5, rough=0.6)
+    for k, (x, y) in enumerate([(-0.07, 0), (0.07, 0), (0, 0.06)]):
+        for i in range(5):
+            cyl("token", 0.05, 0.012, (x, y, 0.008 + i * 0.014), iron if (i + k) % 3 else rust, r, verts=6)
+    box("strap", (0.24, 0.02, 0.012), (0, -0.01, 0.075), mat("strap", (0.6, 0.1, 0.08), rough=0.7), r)
+
+
+def chip():
+    """Perk Chip: a circuit card with a glowing core."""
+    r = _root(tilt=25, scale=2.4)
+    board = mat("board", (0.05, 0.25, 0.12), rough=0.5)
+    gold = mat("pins", (0.95, 0.75, 0.2), metal=1.0, rough=0.25)
+    box("board", (0.18, 0.12, 0.012), (0, 0, 0.1), board, r, rot=rad(70, 0, 0), bevel=0.004)
+    box("core", (0.06, 0.03, 0.06), (0, -0.01, 0.1), glow("chipglow", (1.0, 0.3, 0.9), 5), r, bevel=0.005)
+    for i in range(6):
+        box("pin", (0.012, 0.012, 0.03), (-0.075 + i * 0.03, 0.01, 0.035), gold, r)
+
+
+def cage(open_=False):
+    def build():
+        r = empty("root")
+        iron = mat("cageiron", (0.16, 0.16, 0.17), metal=0.8, rough=0.45, noise=0.3, noise_scale=15)
+        box("base", (0.8, 0.8, 0.05), (0, 0, 0.025), iron, r, bevel=0.01)
+        box("top", (0.8, 0.8, 0.05), (0, 0, 0.78), iron, r, bevel=0.01)
+        for i in range(7):
+            x = -0.36 + i * 0.12
+            if open_ and 1 <= i <= 5:
+                # Front bars slid up into the roof.
+                cyl("bar", 0.018, 0.12, (x, -0.38, 0.72), iron, r, verts=8)
+            else:
+                cyl("bar", 0.018, 0.74, (x, -0.38, 0.4), iron, r, verts=8)
+            if not open_ or i in (0, 6):
+                cyl("bar", 0.018, 0.74, (x, 0.38, 0.4), iron, r, verts=8)
+        if open_:
+            box("gate", (0.6, 0.02, 0.12), (0, -0.38, 0.66), iron, r, bevel=0.01)
+        for y in (-0.2, 0.0, 0.2):
+            for x in (-0.38, 0.38):
+                cyl("bar", 0.018, 0.74, (x, y, 0.4), iron, r, verts=8)
+        box("lamp", (0.08, 0.02, 0.04), (0, -0.4, 0.82), glow("cagelamp", (0.2, 1.0, 0.3) if open_ else (1.0, 0.15, 0.1), 5), r)
+    return build
+
+
+def target(foe):
+    def build():
+        r = empty("root")
+        card = mat("card", (0.62, 0.5, 0.32), rough=0.9, noise=0.3, noise_scale=40)
+        paint = mat("tpaint", (0.75, 0.12, 0.08) if foe else (0.85, 0.82, 0.72), rough=0.8)
+        ring = mat("tring", (0.95, 0.92, 0.85) if foe else (0.15, 0.45, 0.2), rough=0.8)
+        cyl("post", 0.02, 0.3, (0, 0.02, 0.15), mat("tpost", (0.2, 0.2, 0.22), metal=0.7, rough=0.4), r, verts=8)
+        box("torso", (0.34, 0.02, 0.34), (0, 0, 0.47), paint, r, bevel=0.03)
+        ball("head", 0.1, (0, 0, 0.74), paint, r, scale=(1, 0.2, 1.1))
+        if foe:
+            for rad_ in (0.11, 0.06):
+                cyl("ring", rad_, 0.004, (0, -0.012 - (0.11 - rad_) * 0.05, 0.5), ring if rad_ > 0.08 else paint, r, axis="Y", verts=32)
+            box("visor", (0.12, 0.01, 0.03), (0, -0.02, 0.75), glow("tvisor", (0.2, 1.0, 0.9), 2), r)
+        else:
+            # Hostage cutout: hands raised and a green "DON'T SHOOT" band.
+            for s in (-1, 1):
+                box("arm", (0.06, 0.02, 0.22), (s * 0.2, 0, 0.72), paint, r, rot=rad(0, -s * 15, 0), bevel=0.02)
+            box("band", (0.34, 0.025, 0.06), (0, -0.005, 0.47), ring, r)
+            box("gag", (0.14, 0.02, 0.025), (0, -0.01, 0.71), ring, r)
+    return build
+
+
+def arc_spark(frame):
+    def build():
+        import random
+        rng = random.Random(4 + frame)
+        bolt = glow("arcbolt", (0.55, 0.85, 1.0), 8 if frame == 0 else 4)
+        ball("core", 0.06 if frame == 0 else 0.035, (0, -0.1, 0.5), glow("arccore", (0.9, 0.97, 1.0), 10))
+        for i in range(7):
+            a = rng.uniform(0, math.tau)
+            length = rng.uniform(0.12, 0.3) * (1.0 if frame == 0 else 1.4)
+            cyl("bolt", 0.008, length, (math.cos(a) * length * 0.5, -0.1, 0.5 + math.sin(a) * length * 0.5), bolt,
+                r2=0.002, verts=6, rot=(0, -a + math.pi / 2, 0))
+    return build
+
+
 BUILDERS = {
     "ammo": ammo, "clip": clip, "medkit": medkit, "food": food, "gem": gem, "idol": idol,
     "life": life, "rifle": rifle_item, "rotary": rotary_item,
     "key_red": keycard((0.85, 0.1, 0.08)), "key_blue": keycard((0.12, 0.35, 0.95)),
     "map": prison_map, "key_gold": keycard((0.95, 0.68, 0.08)),
     "plasma": plasma, "blast_0": blast(0), "blast_1": blast(1), "blast_2": blast(2), "pillar": pillar, "lamp": lamp, "barrel": barrel,
+    "mod_crate": mod_crate, "scrip_cache": scrip_cache, "chip": chip,
+    "cage": cage(False), "cage_open": cage(True),
+    "target_foe": target(True), "target_hostage": target(False),
+    "arc_0": arc_spark(0), "arc_1": arc_spark(1),
 }
 
 

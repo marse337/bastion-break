@@ -8,7 +8,6 @@ const RADIUS := 0.24
 const WALK := 2.6
 const RUN := 4.4
 const TURN := 2.4
-const FIRE_DELAY := [0.42, 0.28, 0.13, 0.075]
 
 var world
 var pos := Vector2.ZERO
@@ -24,6 +23,9 @@ var mouse_sens := 0.006
 var invulnerable := 0.0
 var since_shot := 99.0
 var anim_len := 0.15
+## Locked in place (the calibration range): can turn and shoot, not walk.
+var locked := false
+var _half_tick := false
 
 
 func setup(w, p: Vector2, a: float) -> void:
@@ -68,6 +70,8 @@ func tick(delta: float) -> void:
 	var fwd := forward()
 	var right := Vector2(-sin(angle), cos(angle))
 	var mv := fwd * Input.get_axis("move_back", "move_forward") + right * Input.get_axis("strafe_left", "strafe_right")
+	if locked:
+		mv = Vector2.ZERO
 	moving = mv.length_squared() > 0.01
 	if moving:
 		var speed_mult := 1.15 if Game.has_perk("fleet_foot") else 1.0
@@ -89,19 +93,40 @@ func _move(d: Vector2) -> void:
 		pos = np
 
 
+## Selects slot `i`. Pressing the key of the slot already in hand switches
+## between the weapons stored in it (base weapon and prototypes).
 func select_weapon(i: int) -> void:
-	if Game.owned[i] and (i == Game.Weapon.SHIV or Game.ammo > 0):
-		Game.current_weapon = i
-		Game.auto_shiv = false
+	if world.range_state == 1:
+		return
+	if not Game.owned[i] or (i != Game.Weapon.SHIV and Game.ammo <= 0):
+		return
+	if Game.current_weapon == i and Game.slot_guns[i].size() > 1:
+		var list: Array = Game.slot_guns[i]
+		Game.slot_active[i] = list[(list.find(Game.slot_active[i]) + 1) % list.size()]
+		Game.message.emit(Game.WEAPONS[Game.slot_active[i]].name)
+	Game.current_weapon = i
+	Game.auto_shiv = false
 
 
+## Mouse wheel / touch SWAP: steps through every weapon you carry.
 func cycle_weapon(dir: int) -> void:
-	var w: int = Game.current_weapon
-	for _i in 4:
-		w = posmod(w + dir, 4)
-		if Game.owned[w] and (w == Game.Weapon.SHIV or Game.ammo > 0):
-			select_weapon(w)
-			return
+	if world.range_state == 1:
+		return
+	var all := []
+	for s in 4:
+		if s == Game.Weapon.SHIV or Game.ammo > 0:
+			for id in Game.slot_guns[s]:
+				all.append([s, id])
+	if all.is_empty():
+		return
+	var cur := 0
+	for k in all.size():
+		if all[k][0] == Game.current_weapon and all[k][1] == Game.weapon_id():
+			cur = k
+	var nx: Array = all[posmod(cur + dir, all.size())]
+	Game.current_weapon = nx[0]
+	Game.slot_active[nx[0]] = nx[1]
+	Game.auto_shiv = false
 
 
 func _weapons() -> void:
@@ -109,21 +134,42 @@ func _weapons() -> void:
 		if Input.is_action_just_pressed("weapon_%d" % (i + 1)):
 			select_weapon(i)
 	var w: int = Game.current_weapon
-	var automatic := w >= Game.Weapon.RIFLE
-	var want := Input.is_action_pressed("fire") if automatic else Input.is_action_just_pressed("fire")
+	var st: Dictionary = Game.WEAPONS[Game.weapon_id()]
+	var want := Input.is_action_pressed("fire") if st.auto else Input.is_action_just_pressed("fire")
 	if not want or fire_cd > 0.0:
 		return
-	if w != Game.Weapon.SHIV:
+	var calib: bool = world.range_state == 1
+	var bullets := 1
+	if calib:
+		# Calibration clip: 12 free rounds, the real ammo pool is untouched.
+		if world.range_ammo <= 0:
+			fire_cd = 0.3
+			world.play_sfx("denied")
+			return
+		world.range_ammo -= 1
+	elif w != Game.Weapon.SHIV:
 		if Game.ammo <= 0:
 			Game.switch_to_shiv()
 			return
-		Game.ammo -= 1
-	fire_cd = FIRE_DELAY[w] * (0.85 if Game.has_perk("quick_hands") else 1.0)
+		if st.get("arc", false) and world.arc_target() == null:
+			return  # the discharger only fires with a target in reach
+		var cost: int = st.get("cost", 1)
+		if st.get("half_cost", false):
+			_half_tick = not _half_tick
+			cost = 1 if _half_tick else 0
+		cost = mini(cost, Game.ammo)
+		if int(st.get("cost", 1)) >= 2:
+			bullets = maxi(1, cost)
+		Game.ammo -= cost
+	fire_cd = float(st.delay) * (0.85 if Game.has_perk("quick_hands") else 1.0)
 	since_shot = 0.0
-	anim_len = 0.24 if w == Game.Weapon.SHIV else minf(0.16, fire_cd * 1.6)
+	if w == Game.Weapon.SHIV:
+		anim_len = 0.36 if Game.weapon_id() == "baton" else 0.24
+	else:
+		anim_len = minf(0.26 if Game.weapon_id() == "slugger" else 0.16, fire_cd * 1.6)
 	fire_anim = 0.2 if w == Game.Weapon.SHIV else 0.08
-	world.player_attack(w)
-	if w != Game.Weapon.SHIV and Game.ammo <= 0:
+	world.player_attack(w, bullets)
+	if not calib and w != Game.Weapon.SHIV and Game.ammo <= 0:
 		Game.switch_to_shiv()
 
 

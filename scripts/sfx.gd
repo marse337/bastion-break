@@ -8,7 +8,11 @@ const KINDS := [
 	"sidearm", "rifle", "rotary", "shiv", "enemy_shot", "bite", "door", "push",
 	"pickup", "weapon", "key", "hurt", "alert", "hound", "die", "denied",
 	"exit", "secret", "player_die", "boss_alert", "launch", "blast",
+	"slugger", "nail", "arc", "baton", "alarm", "vent",
+	"chime_r", "chime_b", "chime_g",
+	"chime_rbg", "chime_rgb", "chime_brg", "chime_bgr", "chime_grb", "chime_gbr",
 ]
+const CHIME_HZ := {"r": 523.0, "b": 659.0, "g": 880.0}
 
 
 static func make(kind: String) -> AudioStreamWAV:
@@ -38,7 +42,20 @@ static func make(kind: String) -> AudioStreamWAV:
 		"boss_alert": s = _sweep(90.0, 38.0, 1.1, 0.7, true)
 		"launch": s = _shot(rng, 0.4, 55.0, 0.6, true)
 		"blast": s = _rumble(rng, 0.9, 28.0, 0.9)
-		_: s = _sweep(440.0, 440.0, 0.1, 0.3, true)
+		"slugger": s = _shot(rng, 0.32, 70.0, 1.0, false)
+		"nail": s = _shot(rng, 0.07, 420.0, 0.45, true)
+		"arc": s = _sweep(1900.0, 500.0, 0.12, 0.3, true)
+		"baton": s = _rumble(rng, 0.16, 120.0, 0.6)
+		"alarm": s = _arp([880.0, 660.0, 880.0, 660.0, 880.0, 660.0], 0.12, 0.3)
+		"vent": s = _rumble(rng, 1.3, 260.0, 0.35)
+		_:
+			if kind.begins_with("chime_"):
+				var notes := []
+				for ch in kind.substr(6):
+					notes.append(CHIME_HZ[ch])
+				s = _arp(notes, 0.32, 0.3)
+			else:
+				s = _sweep(440.0, 440.0, 0.1, 0.3, true)
 	return _to_wav(s)
 
 

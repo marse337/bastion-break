@@ -111,9 +111,14 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 	if "--run" in _args:
-		Game.new_run()
+		var proto := "escape"
+		for a in _args:
+			if a.begins_with("--protocol="):
+				proto = a.substr(11)
+		Game.new_run(proto)
 		if seed_override >= 0:
 			Game.run_seed = seed_override
+			Game.bounty_floor = 1 if Game.protocol == "gauntlet" else seed_override % 2
 		Game.level_index = clampi(start_level, 0, Game.RUN_FLOORS.size() - 1)
 		load_level()
 	elif "--cell" in _args:
@@ -214,8 +219,11 @@ func show_cell() -> void:
 		var status := "OWNED" if cost < 0 else "%d scrip" % cost
 		var level_text := " lv %d" % lv if (u[2] as Array).size() > 1 and lv > 0 else ""
 		lines += "%d  %s%s  [%s]   %s\n" % [i + 1, u[0], level_text, status, u[1]]
-	lines += "\nEarn scrip from kills, treasure, cleared floors and perfect tallies.\n\n"
-	lines += "1-6 buy     ENTER start the escape run     Esc back"
+	var proto: Array = Game.PROTOCOLS[Game.protocol_choice]
+	lines += "\nPROTOCOL (P to change):  %s\n%s\n" % [proto[0].to_upper(), proto[1]]
+	if Game.protocol_choice == "daily":
+		lines += "Today's best: %d\n" % Game.daily_best_today()
+	lines += "\n1-6 buy     P protocol     ENTER start     Esc back"
 	hud.show_screen("CELL 4471", lines, true)
 
 
@@ -249,7 +257,10 @@ func _pick_perk(i: int) -> void:
 func _pause_text() -> String:
 	var t := "Esc - resume\nQ - quit to title\n\nF2 - toggle HD / retro pixels\nF11 - fullscreen\nTab - large map"
 	if Game.is_run():
-		t += "\n\nRun perks: "
+		t += "\n\nProtocol: " + Game.PROTOCOLS[Game.protocol][0]
+		if Game.is_protocol("daily"):
+			t += "   (multiplier x%.1f)" % Game.score_mult
+		t += "\nRun perks: "
 		if Game.perks.is_empty():
 			t += "none yet"
 		else:
@@ -269,26 +280,43 @@ func start_classic(level := 0) -> void:
 
 
 func start_run() -> void:
-	Game.new_run()
+	Game.new_run(Game.protocol_choice)
 	load_level()
 
 
 func level_count() -> int:
-	return Game.RUN_FLOORS.size() if Game.is_run() else Levels.LEVELS.size()
+	return Game.run_floor_count() if Game.is_run() else Levels.LEVELS.size()
 
 
 func _level_for(index: int) -> Dictionary:
 	if not Game.is_run():
 		return Levels.LEVELS[index]
-	var theme: String = Game.RUN_FLOORS[index]
+	var theme: String = Game.run_floor_theme(index)
 	if theme == "boss":
 		return Levels.LEVELS[2]
-	return LevelGen.generate(theme, Game.run_seed + index * 1013)
+	var opts := {
+		"index": index,
+		"bounty": index == Game.bounty_floor,
+		"locker": index < 2 and Game.protocol in ["escape", "ghost", "daily"],
+	}
+	var lvl := LevelGen.generate(theme, Game.run_seed + index * 1013, opts)
+	if Game.protocol == "gauntlet":
+		lvl = lvl.duplicate()
+		lvl.name = "Sector %d" % (index + 1)
+	return lvl
 
 
 func load_level() -> void:
 	_free_world()
 	Game.begin_level()
+	var floor_note := ""
+	if Game.is_protocol("scramble"):
+		Game.scramble_loadout()
+		floor_note = "Prototypes issued: %s, %s, %s" % [Game.WEAPONS[Game.weapon_id(1)].name, Game.WEAPONS[Game.weapon_id(2)].name, Game.WEAPONS[Game.weapon_id(3)].name]
+	if Game.locker_pending:
+		Game.locker_pending = false
+		Game.give_weapon(Game.Weapon.RIFLE, 0, "masterwork")
+		floor_note = "The locker returned a MASTERWORK AUTO RIFLE"
 	current_level = _level_for(Game.level_index)
 	world = World.new()
 	world.name = "World"
@@ -300,10 +328,20 @@ func load_level() -> void:
 			var p := a.substr(6).split(",")
 			world.player.pos = Vector2(float(p[0]), float(p[1]))
 			world.player.angle = deg_to_rad(float(p[2]))
+	for a in _args:
+		if a.begins_with("--goto="):
+			print("goto ", a.substr(7), ": ", world.debug_goto(a.substr(7)))
+	if "--quit" in _args and shot_path == "":
+		get_tree().quit.call_deferred()
 	if "--alert" in _args:
 		world.alert_all()
 	if "--arsenal" in _args:
-		Game.owned = [true, true, true, true]
+		for s in 4:
+			Game.give_weapon(s, 0)
+		for a in _args:
+			if a.begins_with("--give="):
+				for id in a.substr(7).split(","):
+					Game.give_weapon(Game.WEAPONS[id].slot, 0, id)
 		Game.ammo = Game.max_ammo()
 		Game.current_weapon = Game.Weapon.ROTARY
 	state = "playing"
@@ -311,6 +349,8 @@ func load_level() -> void:
 	hud.death_alpha = 0.0
 	_capture_mouse()
 	hud.show_message("FLOOR %d: %s" % [Game.level_index + 1, world.level_name.to_upper()])
+	if floor_note != "":
+		get_tree().create_timer(2.6).timeout.connect(func(): if world != null: hud.show_message(floor_note))
 
 
 func _free_world() -> void:
@@ -343,8 +383,8 @@ func _after_death() -> void:
 		state = "runover"
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		hud.show_screen("RUN OVER",
-			"Rook fell on floor %d.\n\nScore: %d\nIron Scrip earned this run: %d   (banked: %d)\n\nPress ENTER to return to the Cell" %
-			[Game.level_index + 1, Game.score, Game.run_scrip, Game.scrip])
+			"%s: Rook fell on floor %d.\n\nScore: %d%s\nIron Scrip earned this run: %d   (banked: %d)\n\nPress ENTER to return to the Cell" %
+			[Game.PROTOCOLS[Game.protocol][0], Game.level_index + 1, Game.score, _daily_line(), Game.run_scrip, Game.scrip])
 	else:
 		state = "gameover"
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -373,16 +413,29 @@ func on_level_exit() -> void:
 	if Game.is_run():
 		Game.earn_scrip(10 + perfect * 10)
 		Game.save_meta()
-		pending_perks = perfect
+		pending_perks = perfect + Game.bonus_perks
+		Game.bonus_perks = 0
+		if Game.is_protocol("gauntlet") and (Game.level_index + 1) % 2 == 0:
+			pending_perks += 1
 		extra = "\nIron Scrip this floor: %d" % Game.floor_scrip
 		if perfect > 0:
-			extra += "\nPerfect categories: %d  ->  %d perk pick%s" % [perfect, perfect, "" if perfect == 1 else "s"]
+			extra += "\nPerfect categories: %d" % perfect
+		if pending_perks > 0:
+			extra += "\nPerk picks: %d" % pending_perks
 	hud.show_screen("FLOOR %d CLEARED" % (Game.level_index + 1),
 		"Kills       %3d%%   (%d / %d)\nSecrets     %3d%%   (%d / %d)\nTreasure    %3d%%   (%d / %d)\nHostages    %3d%%   (%d / %d freed%s)\n\n" % [
 			kp, Game.kills, Game.kills_total, sp, Game.secrets, Game.secrets_total, tp, Game.treasure, Game.treasure_total,
 			hp, Game.hostages, Game.hostages_total, ", %d lost" % Game.hostages_lost if Game.hostages_lost > 0 else ""] +
-		"Time  %d:%02d     Par  %d:%02d\n\n" % [t / 60, t % 60, par / 60, par % 60] +
-		"Bonus  %d\nScore  %d%s\n\nPress ENTER to continue" % [bonus, Game.score, extra])
+		"Time  %d:%02d     Par  %d:%02d\n" % [t / 60, t % 60, par / 60, par % 60] +
+		"Bonus  %d     Score  %d%s\n\nPress ENTER to continue" % [bonus, Game.score, extra], true)
+
+
+## Daily Lockdown: records the score and returns a line for the end screen.
+func _daily_line() -> String:
+	if not Game.is_protocol("daily"):
+		return ""
+	var best := Game.record_daily_score()
+	return "   (x%.1f multiplier)\n%s today's best: %d" % [Game.score_mult, "NEW" if best else "", Game.daily_best_today()]
 
 
 func _pct(a: int, b: int) -> int:
@@ -400,9 +453,10 @@ func _next_level() -> void:
 	if Game.is_run():
 		Game.earn_scrip(50)
 		Game.save_meta()
+		var how := "Every hostage is free and Rook slips out unseen." if Game.is_protocol("ghost") else "The Overseer has fallen and Rook walks free."
 		hud.show_screen("ESCAPED!",
-			"The Overseer has fallen and Rook walks free.\n\nScore: %d\nIron Scrip earned this run: %d   (banked: %d)\n\nPress ENTER to return to the Cell" %
-			[Game.score, Game.run_scrip, Game.scrip])
+			"%s\n\nScore: %d%s\nIron Scrip earned this run: %d   (banked: %d)\n\nPress ENTER to return to the Cell" %
+			[how, Game.score, _daily_line(), Game.run_scrip, Game.scrip])
 	else:
 		hud.show_screen("YOU BROKE OUT!",
 			"The Overseer has fallen and Rook walks free.\n\nFinal score: %d\n\nPress ENTER" % Game.score)
@@ -422,16 +476,25 @@ func _gen_test(n: int) -> void:
 	for theme in LevelGen.THEMES:
 		var ok := 0
 		var fallback := 0
+		var counts := {"range": 0, "puzzle": 0, "lockins": 0, "standoff": 0, "C": 0, "L": 0, "K": 0}
 		for i in n:
-			var lvl := LevelGen.generate(theme, 1000 + i * 31)
+			var lvl := LevelGen.generate(theme, 1000 + i * 31, {"index": i % 6, "bounty": i % 2 == 0, "locker": true})
 			if not lvl.has("seed"):
 				fallback += 1
 			elif Levels.validate(lvl).is_empty():
 				ok += 1
-		print("%s: %d / %d valid, %d fallbacks" % [theme, ok, n, fallback])
-	var sample := LevelGen.generate("cells", 1234)
+			for k in ["range", "puzzle", "lockins"]:
+				if lvl.has(k):
+					counts[k] += 1
+			var text := "".join(PackedStringArray(lvl.map))
+			for k in ["C", "L", "K"]:
+				if text.contains(k):
+					counts[k] += 1
+		print("%s: %d / %d valid, %d fallbacks, features %s" % [theme, ok, n, fallback, counts])
+	var sample := LevelGen.generate("foundry", 1234, {"bounty": true, "locker": true})
 	for row in sample.map:
 		print(row)
+	print(sample.get("range"), " ", sample.get("puzzle"), " ", sample.get("lockins"))
 
 
 # ================================================================ loop & input
@@ -501,7 +564,7 @@ func _update_weapon() -> void:
 	weapon_rect.visible = show
 	if not show:
 		return
-	weapon_rect.texture = Tex.tex("w_%s_%d" % [Tex.WEAPONS[Game.current_weapon], world.player.weapon_frame()])
+	weapon_rect.texture = Tex.tex("w_%s_%d" % [Game.weapon_id(), world.player.weapon_frame()])
 	var k := viewport.size.y / float(VIEW_H)
 	var bob := world.player.bob
 	var off := Vector2(cos(bob * 0.5) * 6.0, absf(sin(bob * 0.5)) * 6.0) if world.player.moving and state == "playing" else Vector2.ZERO
@@ -553,6 +616,12 @@ func _input(event: InputEvent) -> void:
 				start_run()
 			elif event.is_action_pressed("pause"):
 				show_title()
+			elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_P:
+				var order := Game.PROTOCOL_ORDER
+				Game.protocol_choice = order[(order.find(Game.protocol_choice) + 1) % order.size()]
+				Game.save_settings()
+				play_sfx("pickup")
+				show_cell()
 			elif num >= 0 and num < Game.UPGRADE_ORDER.size():
 				if Game.buy_upgrade(Game.UPGRADE_ORDER[num]):
 					play_sfx("weapon")

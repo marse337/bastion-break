@@ -51,7 +51,7 @@ class Rig:
         self.turn = empty("turntable")
         self.root = empty("root", parent=self.turn)
         self.joints = {}
-        self.flashes = {"flash": [], "launch": [], "sparks": [], "ropes": []}
+        self.flashes = {"flash": [], "launch": [], "sparks": [], "ropes": [], "vent": []}
 
     def j(self, name, loc, parent, rot=(0, 0, 0)):
         e = empty(name, loc, parent, rad(*rot))
@@ -119,9 +119,13 @@ def _sparks(rig, parent, loc):
 # ================================================================== humanoids
 
 def humanoid(kind):
-    heavy = kind == "warden"
+    heavy = kind in ("warden", "crimson")
     w = 1.25 if heavy else 1.0
-    if heavy:
+    if kind == "crimson":
+        armor = mat("armor", (0.42, 0.04, 0.035), metal=0.6, rough=0.35, noise=0.25, noise_scale=10)
+        trim = mat("trim", (0.12, 0.1, 0.09), metal=0.8, rough=0.35)
+        visor = glow("visor", (1.0, 0.55, 0.05), 4)
+    elif heavy:
         armor = mat("armor", (0.13, 0.19, 0.42), metal=0.6, rough=0.35, noise=0.25, noise_scale=10)
         trim = mat("trim", (0.62, 0.64, 0.68), metal=0.9, rough=0.3)
         visor = glow("visor", (1.0, 0.15, 0.1), 4)
@@ -147,6 +151,17 @@ def humanoid(kind):
         cyl("tank", 0.025, 0.13, (s * 0.045 * w, 0.16, 0.17), trim, torso)
     cyl("antenna", 0.004, 0.16, (0.06 * w, 0.12, 0.31), trim, torso, verts=6)
     _sparks(rig, torso, (0.05, -0.1, 0.2))
+    if kind == "crimson":
+        # Cooling vents: chest slats that glow orange-hot while it vents.
+        hot = glow("vent_hot", (1.0, 0.45, 0.05), 6)
+        cool = mat("vent_cool", (0.05, 0.04, 0.04), rough=0.6)
+        for i in range(3):
+            box("slat", (0.16 * w, 0.012, 0.016), (0, -0.081, 0.13 + i * 0.03), cool, torso)
+            g = box("slat_hot", (0.15 * w, 0.014, 0.012), (0, -0.083, 0.13 + i * 0.03), hot, torso)
+            rig.flashes["vent"].append(g)
+        for s in (-1, 1):
+            g = ball("exhaust", 0.03, (s * 0.06 * w, 0.16, 0.3), glow("steam", (1.0, 0.6, 0.2), 3), torso, scale=(1, 1, 2))
+            rig.flashes["vent"].append(g)
     ball("antenna_tip", 0.01, (0.06 * w, 0.12, 0.39), visor, torso)
 
     head = rig.j("head", (0, 0, 0.26), torso)
@@ -215,6 +230,10 @@ def humanoid_pose(name, frame, count=4):
             pose["head"] = (6, 0, 0) if frame == 0 else (0, 0, 0)
             pose["flash"] = frame == 0
         return pose
+    if name == "vent":
+        # Arms dropped, chest thrown open, glowing.
+        return {"shoulderR": (-20, 0, -15), "elbowR": (-20, 0, 0), "shoulderL": (-10, 0, 30), "elbowL": (-15, 0, 0),
+                "torso": (-10, 0, 0), "head": (-18, 0, 0), "vent": True}
     if name == "pain":
         return {"torso": (-16, 0, 10), "head": (-22, 0, 8), "shoulderR": (-15, 0, -35), "elbowR": (-25, 0, 0),
                 "shoulderL": (-10, 0, 40), "elbowL": (-20, 0, 0), "thighL": (-10, 0, 0), "kneeL": (15, 0, 0),
@@ -501,12 +520,13 @@ def hostage_pose(name, frame, count=4):
 KINDS = {
     "sentry": (humanoid, humanoid_pose),
     "warden": (humanoid, humanoid_pose),
+    "crimson": (humanoid, humanoid_pose),
     "hound": (hound, hound_pose),
     "overseer": (overseer, overseer_pose),
     "hostage": (hostage, hostage_pose),
 }
 
-EXTRA_SEQ = {"overseer": [("launch", 0, 24, False)]}
+EXTRA_SEQ = {"overseer": [("launch", 0, 24, False)], "crimson": [("vent", 0, 26, False)]}
 # Hostages don't fight: two struggling frames, two freed frames and a body.
 SEQ_OVERRIDE = {"hostage": [("bound", 0, 1, False), ("bound", 1, 4, False), ("freed", 0, 10, False),
                             ("freed", 1, 13, False), ("dead", 0, 20, False)]}

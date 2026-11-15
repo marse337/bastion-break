@@ -195,6 +195,77 @@ def _ceiling():
             box("panel", (0.46, 0.46, 0.015), (0.25 + ix * 0.5, 0.25 + iy * 0.5, 0.0), m, bevel=0.006)
 
 
+def _label(text, loc, size, m):
+    bpy.ops.object.text_add(location=loc)
+    t = bpy.context.active_object
+    t.data.body = text
+    t.data.align_x = "CENTER"
+    t.data.align_y = "CENTER"
+    t.data.size = size
+    t.data.extrude = 0.003
+    t.data.materials.append(m)
+    return t
+
+
+def _terminal(on):
+    """Security terminal: a screen showing three coloured sequence lamps."""
+    _metal_base()
+    frame = mat("frame", (0.3, 0.32, 0.36), metal=0.8, rough=0.35)
+    box("housing", (0.7, 0.62, 0.06), (0.5, 0.56, 0.05), frame, bevel=0.02)
+    screen = glow("screen", (0.1, 0.8, 0.3) if on else (0.04, 0.25, 0.35), 0.45)
+    box("screen", (0.58, 0.32, 0.02), (0.5, 0.64, 0.085), screen)
+    for i, c in enumerate([(1.0, 0.12, 0.08), (0.15, 0.4, 1.0), (1.0, 0.75, 0.1)]):
+        ball("seq", 0.04, (0.33 + i * 0.17, 0.42, 0.1), glow("seq%d" % i, c, 1.2))
+    keys = mat("keys", (0.12, 0.12, 0.14), rough=0.5)
+    for ix in range(5):
+        box("key", (0.07, 0.04, 0.02), (0.3 + ix * 0.1, 0.3, 0.09), keys, bevel=0.005)
+    _label("OVERRIDE" if not on else "OPEN", (0.5, 0.86, 0.1), 0.07, glow("tlabel", (0.9, 0.9, 0.8), 1.5))
+
+
+def _breaker(color, on):
+    """A wall breaker with a coloured lamp and a big throw lever."""
+    _metal_base()
+    frame = mat("frame", (0.5, 0.52, 0.55), metal=0.8, rough=0.35)
+    box("box", (0.46, 0.66, 0.08), (0.5, 0.5, 0.05), frame, bevel=0.02)
+    band = mat("band", color, rough=0.5)
+    box("band", (0.46, 0.08, 0.085), (0.5, 0.86, 0.05), band, bevel=0.01)
+    lamp = glow("lamp", color, 1.6) if on else mat("lamp_off", tuple(c * 0.25 for c in color), rough=0.4)
+    ball("lamp", 0.06, (0.5, 0.72, 0.1), lamp)
+    box("slot", (0.05, 0.32, 0.02), (0.5, 0.42, 0.095), mat("slot", (0.0, 0.0, 0.0)))
+    handle = mat("handle", (0.82, 0.83, 0.86), metal=1.0, rough=0.25)
+    ly = 0.55 if on else 0.29
+    cyl("lever", 0.024, 0.22, (0.5, ly, 0.14), handle, axis="X")
+    ball("knob", 0.04, (0.61, ly, 0.14), band)
+
+
+def _locker():
+    """The Confiscation Locker: a chute with a weapon-shaped intake."""
+    _metal_base()
+    olive = mat("olive", (0.25, 0.28, 0.2), metal=0.5, rough=0.5, noise=0.25, noise_scale=12)
+    trim = mat("trim", (0.85, 0.6, 0.1), metal=0.6, rough=0.4)
+    box("body", (0.74, 0.86, 0.07), (0.5, 0.5, 0.05), olive, bevel=0.02)
+    box("hatch", (0.56, 0.2, 0.03), (0.5, 0.55, 0.09), mat("hatch", (0.05, 0.05, 0.06), rough=0.6), bevel=0.01)
+    box("rifle_outline", (0.44, 0.04, 0.01), (0.5, 0.55, 0.106), trim)
+    for i in range(6):
+        box("hazard", (0.06, 0.12, 0.01), (0.2 + i * 0.12, 0.2, 0.09), trim if i % 2 else mat("blk", (0.02, 0.02, 0.02)))
+    ball("lamp", 0.035, (0.5, 0.8, 0.1), glow("llamp", (1.0, 0.7, 0.1), 2.5))
+    _label("UPGRADE", (0.5, 0.36, 0.1), 0.065, trim)
+
+
+def _range():
+    """Calibration pod console: a firing-window frame with a target sight."""
+    _metal_base()
+    frame = mat("frame", (0.35, 0.37, 0.4), metal=0.8, rough=0.35)
+    box("console", (0.72, 0.5, 0.07), (0.5, 0.4, 0.05), frame, bevel=0.02)
+    sight = glow("sight", (1.0, 0.35, 0.1), 2.0)
+    for r_ in (0.13, 0.08):
+        bpy.ops.mesh.primitive_torus_add(major_radius=r_, minor_radius=0.008, location=(0.5, 0.45, 0.095))
+        bpy.context.active_object.data.materials.append(sight)
+    box("cross_h", (0.36, 0.012, 0.01), (0.5, 0.45, 0.095), sight)
+    box("cross_v", (0.012, 0.36, 0.01), (0.5, 0.45, 0.095), sight)
+    _label("CALIBRATE", (0.5, 0.8, 0.1), 0.075, glow("rlabel", (0.95, 0.85, 0.6), 1.5))
+
+
 BUILDERS = {
     "stone": lambda: _stone(),
     "metal": _metal_base,
@@ -208,8 +279,19 @@ BUILDERS = {
     "door_gold": lambda: _door((0.95, 0.68, 0.08)),
     "door_red": lambda: _door((0.8, 0.1, 0.08)),
     "door_blue": lambda: _door((0.12, 0.32, 0.9)),
+    "door_vault": lambda: _door((0.6, 0.2, 0.85)),
     "floor": _floor,
     "ceiling": _ceiling,
+    "terminal": lambda: _terminal(False),
+    "terminal_on": lambda: _terminal(True),
+    "breaker_red": lambda: _breaker((0.9, 0.1, 0.07), False),
+    "breaker_red_on": lambda: _breaker((0.9, 0.1, 0.07), True),
+    "breaker_blue": lambda: _breaker((0.12, 0.35, 1.0), False),
+    "breaker_blue_on": lambda: _breaker((0.12, 0.35, 1.0), True),
+    "breaker_gold": lambda: _breaker((1.0, 0.72, 0.08), False),
+    "breaker_gold_on": lambda: _breaker((1.0, 0.72, 0.08), True),
+    "locker": _locker,
+    "range": _range,
 }
 
 

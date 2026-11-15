@@ -10,6 +10,11 @@ const STATS := {
 	"hound": {"hp": 8, "speed": 3.6, "score": 200, "aim": 0.2, "burst": 1, "acc": 0.8, "dmg": [5, 11], "range": 1.4, "pain": 0.8},
 	"overseer": {"hp": 650, "speed": 1.3, "score": 5000, "aim": 0.5, "burst": 6, "acc": 0.55, "dmg": [3, 9], "range": 22.0, "pain": 0.06, "radius": 0.45, "boss": true},
 	"warden": {"hp": 100, "speed": 2.0, "score": 500, "aim": 0.4, "burst": 3, "acc": 0.85, "dmg": [5, 14], "range": 18.0, "pain": 0.35},
+	# Bounty Warden: 5-shot bursts, then a 1.5 s cooling vent where every hit
+	# deals triple damage. Waits in its room until it has seen you.
+	"crimson": {"hp": 260, "speed": 1.9, "score": 3000, "aim": 0.45, "burst": 5, "acc": 0.8, "dmg": [5, 13], "range": 18.0, "pain": 0.08, "name": "BOUNTY WARDEN"},
+	# Iron Gauntlet mini-boss: a smaller Overseer.
+	"suboverseer": {"hp": 300, "speed": 1.4, "score": 2500, "aim": 0.5, "burst": 4, "acc": 0.55, "dmg": [3, 8], "range": 22.0, "pain": 0.08, "radius": 0.42, "boss": true, "sprite": "overseer", "name": "SUB-OVERSEER"},
 }
 const HP_SCALE := [0.75, 1.0, 1.3]
 
@@ -33,6 +38,11 @@ var max_hp := 1
 var is_boss := false
 var die_time := 0.45
 var pose_frame := 0
+var sprite_kind := "sentry"
+var home_room := -1
+var gun_alerted := false
+var unleashed := false
+var _hit_flash := 0.0
 
 
 
@@ -40,6 +50,9 @@ func setup(w, k: String, t: Vector2i) -> void:
 	world = w
 	kind = k
 	stats = STATS[k]
+	sprite_kind = stats.get("sprite", k)
+	if k == "suboverseer":
+		modulate = Color(0.7, 0.85, 1.0)
 	hp = int(stats.hp * HP_SCALE[Game.difficulty])
 	max_hp = hp
 	is_boss = stats.get("boss", false)
@@ -80,20 +93,27 @@ func _view_dir() -> int:
 
 func _apply_sprite() -> void:
 	var dir := _view_dir() if pose == "stand" or pose == "walk" else 0
-	var t := Tex.enemy(kind, pose, pose_frame, dir)
+	var t := Tex.enemy(sprite_kind, pose, pose_frame, dir)
 	if t != texture:
 		texture = t
 		pixel_size = 1.0 / t.get_height()
-	modulate = Color(1, 0.55, 0.5) if state == PAIN else Color.WHITE
+	var base := Color(0.7, 0.85, 1.0) if kind == "suboverseer" else Color.WHITE
+	modulate = Color(1, 0.55, 0.5) if state == PAIN or _hit_flash > 0.0 else base
+
+
+func display_name() -> String:
+	return stats.get("name", "THE OVERSEER")
 
 
 func tick(delta: float) -> void:
+	_hit_flash = maxf(0.0, _hit_flash - delta)
 	match state:
 		IDLE:
 			think_t -= delta
 			if think_t <= 0.0:
 				think_t = 0.2
 				if _can_see_player(true):
+					unleashed = true
 					alert()
 		CHASE:
 			_chase(delta)
@@ -132,7 +152,9 @@ func alert() -> void:
 	think_t = randf() * 0.3
 	if is_boss:
 		world.play_sfx("boss_alert")
-		Game.message.emit("THE OVERSEER HAS SEEN YOU")
+		Game.message.emit("%s HAS SEEN YOU" % display_name())
+	elif kind == "crimson":
+		world.play_sfx("boss_alert", pos)
 	else:
 		world.play_sfx("hound" if kind == "hound" else "alert", pos)
 
@@ -141,7 +163,7 @@ func _chase(delta: float) -> void:
 	if target != tile:
 		var door = world.doors.get(target)
 		if door != null and not door.passable():
-			if kind != "hound":
+			if kind != "hound" and (kind != "crimson" or unleashed):
 				world.enemy_open_door(door)
 			_frame("stand")
 			return
@@ -217,6 +239,19 @@ func _attack(delta: float) -> void:
 			else:
 				phase = "recover"
 				state_t = 0.3
+				if kind == "crimson":
+					phase = "vent"
+					state_t = 1.5
+					_frame("vent")
+					world.play_sfx("vent", pos)
+					if not world._vent_hint:
+						world._vent_hint = true
+						Game.message.emit("It's venting - hit it now for triple damage!")
+					return
+			_frame("aim")
+		"vent":
+			phase = "recover"
+			state_t = 0.15
 			_frame("aim")
 		"launch":
 			world.fire_plasma(self)
@@ -253,6 +288,10 @@ func _fire() -> void:
 func take_damage(n: int, force_pain := false) -> void:
 	if not is_alive():
 		return
+	var venting := kind == "crimson" and state == ATTACK and phase == "vent"
+	if venting:
+		n *= 3
+	unleashed = true
 	hp -= n
 	if hp <= 0:
 		state = DYING
@@ -262,6 +301,9 @@ func take_damage(n: int, force_pain := false) -> void:
 		return
 	if state == IDLE:
 		alert()
+	if venting:
+		_hit_flash = 0.12  # flinch flash, but it keeps venting
+		return
 	if force_pain or randf() < stats.pain:
 		state = PAIN
 		state_t = 0.22

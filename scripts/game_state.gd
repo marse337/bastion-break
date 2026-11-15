@@ -7,7 +7,40 @@ signal message(text: String)
 
 enum Weapon { SHIV, SIDEARM, RIFLE, ROTARY }
 
-const WEAPON_NAMES := ["SHIV", "SIDEARM", "AUTO RIFLE", "ROTARY"]
+## Every weapon. Each lives in one of the 4 slots (keys 1-4); a slot can hold
+## a base weapon plus prototypes, and pressing the slot key again switches
+## between them. All guns share one ammo pool.
+##   delay: seconds between shots   auto: hold to fire   cost: ammo per shot
+##   noise: gunfire noise multiplier   reach: melee range in tiles
+const WEAPONS := {
+	"shiv": {"slot": 0, "name": "SHIV", "delay": 0.42, "auto": false, "reach": 1.4},
+	"baton": {"slot": 0, "name": "BATON", "delay": 0.66, "auto": false, "reach": 1.8,
+		"desc": "Breaching Baton: slower swings, 1.8-tile reach, knocks Sentries and Hounds back a tile."},
+	"sidearm": {"slot": 1, "name": "SIDEARM", "delay": 0.28, "auto": false},
+	"slugger": {"slot": 1, "name": "SLUGGER", "delay": 0.42, "auto": false, "cost": 2,
+		"desc": "Directorate Slugger: 2 ammo for two bullets per shot; always makes enemies flinch within 3.5 tiles."},
+	"rifle": {"slot": 2, "name": "AUTO RIFLE", "delay": 0.13, "auto": true},
+	"masterwork": {"slot": 2, "name": "MASTERWORK", "delay": 0.104, "auto": true, "noise": 0.7, "half_cost": true,
+		"desc": "Masterwork Auto Rifle: 25% faster, 30% quieter, uses 1 ammo every 2nd shot."},
+	"nail": {"slot": 2, "name": "NAIL CARBINE", "delay": 0.16, "auto": true, "noise": 0.5, "pierce": true,
+		"desc": "Nail Carbine: nails punch through to the enemy behind (never past a hostage); half the noise."},
+	"rotary": {"slot": 3, "name": "ROTARY", "delay": 0.075, "auto": true},
+	"arc": {"slot": 3, "name": "ARC DISCHARGER", "delay": 0.11, "auto": true, "arc": true,
+		"desc": "Arc Discharger: locks onto the closest enemy within 4 tiles and jumps to a second; never hits hostages."},
+}
+const SLOT_BASE := ["shiv", "sidearm", "rifle", "rotary"]
+## Prototypes that can turn up in mod crates and contraband vaults.
+const PROTOTYPES := ["baton", "slugger", "nail", "arc"]
+
+## Escape Protocols: run modes chosen in the Cell. id: [name, description]
+const PROTOCOLS := {
+	"escape": ["Standard Escape", "Two generated floors, then the Overseer's arena."],
+	"ghost": ["Ghost Protocol", "0 ammo, the Ghost perk and every map revealed. Exits open only when all hostages are free; each gives +6 ammo and 2,000 points."],
+	"gauntlet": ["Iron Gauntlet", "Endless small floors, no keycards. Exit opens at 75% kills or all hostages freed. Sub-Overseer every 3rd floor, free perk every 2nd."],
+	"scramble": ["Arsenal Scramble", "Slots 2-4 are issued random prototype guns at the start of every floor."],
+	"daily": ["Daily Lockdown", "Today's seed, Cell upgrades off. Rooms cleared without a gunfire alert add +0.2x score multiplier; hitting a hostage resets it."],
+}
+const PROTOCOL_ORDER := ["escape", "ghost", "gauntlet", "scramble", "daily"]
 const DIFFICULTY_NAMES := ["TRUSTEE (easy)", "INMATE (normal)", "LIFER (hard)"]
 const MAX_HEALTH := 100
 const MAX_AMMO := 99
@@ -54,6 +87,8 @@ var lives := 3
 var health := MAX_HEALTH
 var ammo := START_AMMO
 var owned: Array[bool] = [true, true, false, false]
+var slot_guns: Array = [["shiv"], ["sidearm"], [], []]
+var slot_active: Array = SLOT_BASE.duplicate()
 var current_weapon := Weapon.SIDEARM
 var auto_shiv := false
 var keys := {"red": false, "blue": false, "gold": false}
@@ -72,6 +107,17 @@ var scrip := 0
 var run_scrip := 0
 var floor_scrip := 0
 var upgrades := {}
+var protocol := "escape"
+## The protocol picked in the Cell (saved between sessions).
+var protocol_choice := "escape"
+## Daily Lockdown: score multiplier and the best score per day.
+var score_mult := 1.0
+var daily_best := {}
+## Once-per-run events.
+var bounty_floor := -1
+var locker_pending := false
+## Extra perk picks waiting for the next terminal (Perk Chips, Gauntlet floors).
+var bonus_perks := 0
 
 var kills := 0
 var kills_total := 0
@@ -90,23 +136,33 @@ func _ready() -> void:
 	if cfg.load(SETTINGS_PATH) == OK:
 		retro = cfg.get_value("display", "retro", false)
 		difficulty = cfg.get_value("game", "difficulty", 1)
+		protocol_choice = cfg.get_value("game", "protocol", "escape")
+		if not PROTOCOLS.has(protocol_choice):
+			protocol_choice = "escape"
 	var meta := ConfigFile.new()
 	if meta.load(META_PATH) == OK:
 		scrip = meta.get_value("meta", "scrip", 0)
 		upgrades = meta.get_value("meta", "upgrades", {})
+		daily_best = meta.get_value("meta", "daily_best", {})
 
 
 func save_settings() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("display", "retro", retro)
 	cfg.set_value("game", "difficulty", difficulty)
+	cfg.set_value("game", "protocol", protocol_choice)
 	cfg.save(SETTINGS_PATH)
 
 
 func save_meta() -> void:
+	# Test runs (--no-save, or any --run / --goto debug launch) never touch the real save.
+	var args := OS.get_cmdline_user_args()
+	if "--no-save" in args or "--run" in args:
+		return
 	var meta := ConfigFile.new()
 	meta.set_value("meta", "scrip", scrip)
 	meta.set_value("meta", "upgrades", upgrades)
+	meta.set_value("meta", "daily_best", daily_best)
 	meta.save(META_PATH)
 
 
@@ -127,8 +183,48 @@ func has_perk(id: String) -> bool:
 	return is_run() and id in perks
 
 
+func is_protocol(id: String) -> bool:
+	return is_run() and protocol == id
+
+
 func upgrade_level(id: String) -> int:
-	return int(upgrades.get(id, 0)) if is_run() else 0
+	if not is_run() or protocol == "daily":
+		return 0
+	return int(upgrades.get(id, 0))
+
+
+## Today's date as a number (YYYYMMDD): the Daily Lockdown seed.
+func today_key() -> int:
+	var d := Time.get_date_dict_from_system()
+	return int(d.year) * 10000 + int(d.month) * 100 + int(d.day)
+
+
+func daily_best_today() -> int:
+	return int(daily_best.get(str(today_key()), 0))
+
+
+## Saves the score if it beats today's best. Returns true on a new best.
+func record_daily_score() -> bool:
+	if not is_protocol("daily") or score <= daily_best_today():
+		return false
+	daily_best[str(today_key())] = score
+	save_meta()
+	return true
+
+
+## Floor theme for run floor `index` under the current protocol.
+func run_floor_theme(index: int) -> String:
+	if protocol == "ghost":
+		return ["cells", "foundry", "foundry"][index]
+	if protocol == "gauntlet":
+		if index % 3 == 2:
+			return "gauntlet_boss"
+		return "gauntlet_cells" if index % 2 == 0 else "gauntlet_foundry"
+	return RUN_FLOORS[index]
+
+
+func run_floor_count() -> int:
+	return 999 if protocol == "gauntlet" else RUN_FLOORS.size()
 
 
 func upgrade_cost(id: String) -> int:
@@ -162,12 +258,15 @@ func max_ammo() -> int:
 
 
 func start_ammo() -> int:
+	if is_protocol("ghost"):
+		return 0
 	return [10, 16, 24][clampi(upgrade_level("stash"), 0, 2)] if is_run() else START_AMMO
 
 
 func noise_radius() -> int:
 	var r := NOISE_RADIUS - 8 * upgrade_level("dampener")
-	return r / 2 if has_perk("muffler") else r
+	r = r / 2 if has_perk("muffler") else r
+	return int(r * float(weapon_stat("noise", 1.0)))
 
 
 func damage_taken_scale() -> float:
@@ -184,10 +283,18 @@ func perk_offer() -> Array[String]:
 	return pool.slice(0, 3)
 
 
-func new_run() -> void:
+func new_run(proto := "escape") -> void:
 	mode = "run"
-	run_seed = randi()
+	protocol = proto
+	run_seed = today_key() * 7 if proto == "daily" else randi() % 1000000000
 	perks.clear()
+	if proto == "ghost":
+		perks.append("ghost")
+	score_mult = 1.0
+	locker_pending = false
+	bonus_perks = 0
+	# One Bounty Warden per run, on floor 1 or 2 (floor 2 in the Gauntlet).
+	bounty_floor = 1 if proto == "gauntlet" else (run_seed % 2)
 	run_scrip = 0
 	level_index = 0
 	score = 0
@@ -198,6 +305,11 @@ func new_run() -> void:
 
 func new_game(start_level := 0) -> void:
 	mode = "classic"
+	protocol = "escape"
+	score_mult = 1.0
+	bounty_floor = -1
+	locker_pending = false
+	bonus_perks = 0
 	level_index = start_level
 	score = 0
 	lives = 3
@@ -208,14 +320,16 @@ func new_game(start_level := 0) -> void:
 func reset_loadout() -> void:
 	health = MAX_HEALTH
 	ammo = start_ammo()
-	owned = [true, true, false, false]
-	current_weapon = Weapon.SIDEARM
-	auto_shiv = false
+	slot_guns = [["shiv"], ["sidearm"], [], []]
+	slot_active = SLOT_BASE.duplicate()
+	_sync_owned()
+	current_weapon = Weapon.SHIV if ammo == 0 else Weapon.SIDEARM
+	auto_shiv = ammo == 0
 
 
 func begin_level() -> void:
 	keys = {"red": false, "blue": false, "gold": false}
-	has_map = is_run() and level_index == 0 and upgrade_level("cartographer") > 0
+	has_map = (is_run() and level_index == 0 and upgrade_level("cartographer") > 0) or is_protocol("ghost")
 	kills = 0
 	kills_total = 0
 	secrets = 0
@@ -238,6 +352,8 @@ func restart_after_death() -> void:
 
 
 func add_score(n: int) -> void:
+	if n > 0 and is_protocol("daily"):
+		n = int(round(n * score_mult))
 	score += n
 	while score >= next_life_at:
 		next_life_at += EXTRA_LIFE_EVERY
@@ -268,13 +384,73 @@ func give_ammo(n: int) -> bool:
 	return true
 
 
-func give_weapon(w: int, bonus_ammo: int) -> void:
+func give_weapon(w: int, bonus_ammo: int, id := "") -> void:
+	if id == "":
+		id = SLOT_BASE[w]
 	var is_new := not owned[w]
-	owned[w] = true
+	if not id in slot_guns[w]:
+		slot_guns[w].append(id)
+	if is_new or id != SLOT_BASE[w]:
+		slot_active[w] = id
+	_sync_owned()
 	ammo = mini(max_ammo(), ammo + bonus_ammo)
 	if is_new and (w > current_weapon or current_weapon == Weapon.SHIV):
 		current_weapon = w
 		auto_shiv = false
+
+
+## Removes one weapon (the Confiscation Locker takes the Auto Rifle).
+func take_weapon(id: String) -> void:
+	var w: int = WEAPONS[id].slot
+	slot_guns[w].erase(id)
+	if slot_active[w] == id:
+		slot_active[w] = slot_guns[w][0] if not slot_guns[w].is_empty() else SLOT_BASE[w]
+	_sync_owned()
+	if current_weapon == w and not owned[w]:
+		current_weapon = best_gun() if ammo > 0 else Weapon.SHIV
+
+
+func owns(id: String) -> bool:
+	return id in slot_guns[WEAPONS[id].slot]
+
+
+## A random prototype the player doesn't have yet ("" when they have them all).
+func roll_prototype() -> String:
+	var pool := []
+	for id in PROTOTYPES:
+		if not owns(id):
+			pool.append(id)
+	return "" if pool.is_empty() else pool.pick_random()
+
+
+## Arsenal Scramble: slots 2-4 get freshly issued random guns each floor.
+func scramble_loadout() -> void:
+	var picks := [["sidearm", "slugger"], ["rifle", "nail", "masterwork"], ["rotary", "arc"]]
+	for k in 3:
+		var id: String = picks[k].pick_random()
+		slot_guns[k + 1] = [id]
+		slot_active[k + 1] = id
+	_sync_owned()
+	if current_weapon != Weapon.SHIV:
+		current_weapon = Weapon.SIDEARM
+
+
+func _sync_owned() -> void:
+	for i in 4:
+		owned[i] = not slot_guns[i].is_empty()
+
+
+## Id of the weapon active in `slot` (default: the one in hand).
+func weapon_id(slot := -1) -> String:
+	return slot_active[current_weapon if slot < 0 else slot]
+
+
+func weapon_stat(key: String, default = null):
+	return WEAPONS[weapon_id()].get(key, default)
+
+
+func weapon_name() -> String:
+	return WEAPONS[weapon_id()].name
 
 
 func switch_to_shiv() -> void:

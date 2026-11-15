@@ -12,10 +12,14 @@ extends RefCounted
 ##            g  auto rifle   c  rotary cannon   r  red keycard   u  blue keycard
 ##            M  prison map (reveals every non-secret room on the automap)
 ##   Hostages: H  a prisoner tied to a post (cut free with the shiv)
+##   Features (generated floors): Y security terminal, 1 2 3 breakers (red blue gold),
+##            V vault door, Z calibration range console, L Confiscation Locker,
+##            & Hound cage, v prototype mod crate, $ contraband scrip cache,
+##            C Bounty Warden, K Sub-Overseer
 ##   Props:   o  pillar   b  barrel   l  ceiling lamp
 ##   Floor:   .
 
-const WALLS := "#BWFE"
+const WALLS := "#BWFEYZL123"
 
 const LEVELS := [
 	{
@@ -123,7 +127,7 @@ static func validate(level: Dictionary) -> PackedStringArray:
 				errs.append("border tile (%d,%d) is '%s', must be a wall" % [x, y, c])
 			if c == "@":
 				start = Vector2i(x, y)
-			if c in ["D", "R", "U", "G"]:
+			if c in ["D", "R", "U", "G", "V"]:
 				var horiz := WALLS.contains(rows[y][x - 1]) and WALLS.contains(rows[y][x + 1])
 				var vert := WALLS.contains(rows[y - 1][x]) and WALLS.contains(rows[y + 1][x])
 				if not horiz and not vert:

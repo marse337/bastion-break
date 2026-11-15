@@ -88,7 +88,7 @@ func _rebuild_colors() -> void:
 			var t := Vector2i(x, y)
 			if world.doors.has(t):
 				var d: Door = world.doors[t]
-				_colors[i] = C_DOOR if d.key == "" else {"red": Color(0.95, 0.2, 0.15), "blue": Color(0.3, 0.5, 1.0), "gold": Color(1.0, 0.8, 0.15)}[d.key]
+				_colors[i] = C_DOOR if d.key == "" else {"red": Color(0.95, 0.2, 0.15), "blue": Color(0.3, 0.5, 1.0), "gold": Color(1.0, 0.8, 0.15), "vault": Color(0.75, 0.3, 1.0)}[d.key]
 			elif world.walls[i] == World.EXIT_TEX:
 				_colors[i] = C_EXIT
 			elif world.walls[i] >= 0 or world.room_of[i] == -1:
@@ -110,6 +110,14 @@ func _draw() -> void:
 	for hg in world.hostages:
 		if hg.is_bound() and _room_shown(world.room_of[hg.tile.y * world.width + hg.tile.x]):
 			draw_rect(Rect2(origin + Vector2(hg.tile) * ts, Vector2(ts, ts)).grow(0.5), C_HOSTAGE)
+	# The Bounty Warden is marked with a skull from the start.
+	if world.crimson != null and world.crimson.is_alive():
+		var c: Vector2 = origin + world.crimson.pos * ts
+		var r := maxf(ts * 1.3, 3.0)
+		draw_circle(c, r, Color(0.95, 0.9, 0.85))
+		draw_rect(Rect2(c + Vector2(-r * 0.55, r * 0.5), Vector2(r * 1.1, r * 0.6)), Color(0.95, 0.9, 0.85))
+		draw_circle(c + Vector2(-r * 0.4, -0.1 * r), r * 0.28, Color(0.7, 0.05, 0.05))
+		draw_circle(c + Vector2(r * 0.4, -0.1 * r), r * 0.28, Color(0.7, 0.05, 0.05))
 	var p: Vector2 = origin + world.player.pos * ts
 	var f: Vector2 = world.player.forward()
 	var side := Vector2(-f.y, f.x)

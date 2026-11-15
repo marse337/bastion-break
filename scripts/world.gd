@@ -4,20 +4,26 @@ extends Node3D
 ## doors, sliding secret walls, enemies, pickups, hitscan and gunfire noise.
 ## One tile = one world unit. Tile (x, y) covers X in [x, x+1], Z in [y, y+1].
 
-const TEX_NAMES := ["stone", "metal", "rust", "sigil", "exit"]
-const WALL_CHARS := {"#": 0, "B": 1, "W": 2, "F": 3, "E": 4}
+const TEX_NAMES := ["stone", "metal", "rust", "sigil", "exit", "terminal", "breaker_red", "breaker_blue", "breaker_gold", "locker", "range"]
+const WALL_CHARS := {"#": 0, "B": 1, "W": 2, "F": 3, "E": 4, "Y": 5, "1": 6, "2": 7, "3": 8, "L": 9, "Z": 10}
 const EXIT_TEX := 4
-const ITEM_CHARS := {"a": "ammo", "m": "medkit", "f": "food", "t": "gem", "T": "idol", "x": "life", "g": "rifle", "c": "rotary", "r": "key_red", "u": "key_blue", "k": "key_gold", "M": "map"}
-const ENEMY_CHARS := {"s": "sentry", "h": "hound", "w": "warden", "O": "overseer"}
+const TERMINAL_TEX := 5
+const BREAKER_TEX := {6: "red", 7: "blue", 8: "gold"}
+const LOCKER_TEX := 9
+const RANGE_TEX := 10
+const RANGE_TIME := 8.0
+const LOCKIN_TIME := 12.0
+const ITEM_CHARS := {"a": "ammo", "m": "medkit", "f": "food", "t": "gem", "T": "idol", "x": "life", "g": "rifle", "c": "rotary", "r": "key_red", "u": "key_blue", "k": "key_gold", "M": "map", "v": "mod_crate", "$": "scrip_cache"}
+const ENEMY_CHARS := {"s": "sentry", "h": "hound", "w": "warden", "O": "overseer", "C": "crimson", "K": "suboverseer"}
 const DECO_CHARS := {"o": "pillar", "b": "barrel", "l": "lamp"}
-const DOOR_CHARS := {"D": "", "R": "red", "U": "blue", "G": "gold"}
+const DOOR_CHARS := {"D": "", "R": "red", "U": "blue", "G": "gold", "V": "vault"}
 const PUSH_CHARS := {"P": 0, "Q": 1}
 const TREASURE := ["gem", "idol", "life"]
 const DIRS := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 const INF := 1 << 20
 const HOSTAGE_SCRIP := 5
 const HOSTAGE_SCORE := 1000
-const KILL_SCRIP := {"sentry": 1, "hound": 1, "warden": 3, "overseer": 40}
+const KILL_SCRIP := {"sentry": 1, "hound": 1, "warden": 3, "overseer": 40, "crimson": 10, "suboverseer": 15}
 const DAMAGE_SCALE := [0.5, 1.0, 1.35]
 
 
@@ -57,6 +63,24 @@ var boss: Enemy = null
 var projectiles: Array[Dictionary] = []
 var effects: Array[Dictionary] = []
 var exited := false
+var crimson: Enemy = null
+# Security terminal puzzle
+var puzzle_order: Array = []
+var puzzle_step := 0
+var puzzle_solved := false
+# Calibration range: 0 ready, 1 running, 2 spent
+var range_data: Dictionary = {}
+var range_state := 0
+var range_t := 0.0
+var range_ammo := 0
+var range_targets: Array = []
+var range_foul := false
+var _range_saved := []
+# Hound lock-ins: {rect, cages, nodes, state (0 armed, 1 sealed, 2 done), t}
+var lockins: Array = []
+# Daily Lockdown: rooms already scored for the clean-room multiplier
+var clean_rooms := {}
+var _vent_hint := false
 var _wall_mats: Array[StandardMaterial3D] = []
 var _field_timer := 0.0
 var _field_tile := Vector2i(-99, -99)
@@ -84,6 +108,7 @@ func build(level: Dictionary) -> void:
 	var start := Vector2(1.5, 1.5)
 	var door_specs := []
 	var enemy_specs := []
+	var cage_specs: Array[Vector2i] = []
 	for y in height:
 		var row: String = rows[y]
 		for x in width:
@@ -101,6 +126,8 @@ func build(level: Dictionary) -> void:
 				door_specs.append([t, DOOR_CHARS[c]])
 			elif c == "@":
 				start = p
+			elif c == "&":
+				cage_specs.append(t)
 			elif c == "H":
 				var hg := Hostage.new()
 				add_child(hg)
@@ -131,6 +158,8 @@ func build(level: Dictionary) -> void:
 		enemies.append(e)
 		if e.is_boss:
 			boss = e
+		if e.kind == "crimson":
+			crimson = e
 		reserve(e.tile, e)
 	player = Player.new()
 	add_child(player)
@@ -139,6 +168,17 @@ func build(level: Dictionary) -> void:
 	player.setup(self, start_pos, start_angle)
 	_make_environment()
 	_compute_rooms(Vector2i(floori(start.x), floori(start.y)))
+	for e in enemies:
+		e.home_room = room_of[_i(e.tile)]
+	puzzle_order = level.get("puzzle", [])
+	range_data = level.get("range", {})
+	for spec in level.get("lockins", []):
+		var nodes := []
+		for t in spec.cages:
+			nodes.append(_make_sprite("cage", Vector2(t.x + 0.5, t.y + 0.5)))
+		lockins.append({"rect": spec.rect, "cages": spec.cages, "nodes": nodes, "state": 0, "t": 0.0})
+	if crimson != null:
+		Game.message.emit("A BOUNTY WARDEN guards this floor (skull on the map)")
 	Game.kills_total = enemies.size()
 	Game.secrets_total = pushwalls.size()
 	Game.hostages_total = hostages.size()
@@ -363,8 +403,11 @@ func _make_sprite(tex_name: String, p: Vector2) -> Sprite3D:
 	return s
 
 
-func _spawn_item(type: String, p: Vector2) -> void:
-	items.append({"type": type, "pos": p, "node": _make_sprite(type, p)})
+func _spawn_item(type: String, p: Vector2, tex := "", group := "") -> void:
+	var it := {"type": type, "pos": p, "node": _make_sprite(type if tex == "" else tex, p)}
+	if group != "":
+		it["group"] = group
+	items.append(it)
 
 
 # ================================================================ queries
@@ -526,7 +569,9 @@ func make_noise(from: Vector2i) -> void:
 			seen[n] = dist + 1
 			queue.append(n)
 	for e in enemies:
-		if e.state == Enemy.IDLE and seen.has(e.tile):
+		# The Bounty Warden ignores distant gunfire; it waits for you.
+		if e.state == Enemy.IDLE and seen.has(e.tile) and e.kind != "crimson":
+			e.gun_alerted = true
 			e.alert()
 
 
@@ -560,6 +605,9 @@ func tick(delta: float) -> void:
 		e.tick(delta)
 	for hg in hostages:
 		hg.tick(delta)
+	if range_state == 1:
+		_tick_range(delta)
+	_tick_lockins(delta)
 	_tick_projectiles(delta)
 	_tick_effects(delta)
 	if not player.dead:
@@ -622,6 +670,14 @@ func player_use() -> void:
 	var door = doors.get(t)
 	if door != null:
 		if not door.unlocked:
+			if door.key == "vault":
+				play_sfx("denied")
+				Game.message.emit("Sealed vault - override the security terminal to open it")
+				return
+			if door.key == "":
+				play_sfx("denied")
+				Game.message.emit("The doors are sealed!")
+				return
 			if Game.keys.get(door.key, false):
 				door.unlocked = true
 				Game.message.emit("Used the %s keycard" % door.key)
@@ -644,20 +700,46 @@ func player_use() -> void:
 	if hg != null:
 		Game.message.emit("Cut the ropes with your SHIV to free them")
 		return
-	if in_bounds(t) and walls[_i(t)] == EXIT_TEX and not exited:
+	if not in_bounds(t):
+		return
+	var tid := walls[_i(t)]
+	if tid == TERMINAL_TEX:
+		_use_terminal()
+		return
+	if BREAKER_TEX.has(tid):
+		_use_breaker(BREAKER_TEX[tid], t)
+		return
+	if tid == LOCKER_TEX:
+		_use_locker()
+		return
+	if tid == RANGE_TEX:
+		_start_range()
+		return
+	if tid == EXIT_TEX and not exited:
+		var why := exit_blocked_reason()
+		if why != "":
+			play_sfx("denied")
+			Game.message.emit(why)
+			return
 		exited = true
 		_wall_mats[EXIT_TEX].albedo_texture = Tex.tex("exit_on")
 		play_sfx("exit")
 		main.on_level_exit()
 
 
-## Hitscan attack. The shiv is silent; guns wake up nearby enemies.
-## The shiv also cuts hostages free and pries open secret walls.
-func player_attack(w: int) -> void:
+## Hitscan attack. Melee is silent; guns wake up nearby enemies.
+## Melee (shiv or baton) also cuts hostages free and pries open secret walls.
+func player_attack(w: int, bullets := 1) -> void:
+	var id := Game.weapon_id()
+	if range_state == 1:
+		_range_shot()
+		return
 	if w == Game.Weapon.SHIV:
-		play_sfx("shiv")
-		var e := _find_target(1.4)
-		var hg := _find_hostage(1.4, true)
+		var reach: float = Game.weapon_stat("reach", 1.4)
+		var baton := id == "baton"
+		play_sfx("baton" if baton else "shiv")
+		var e := _find_target(reach)
+		var hg := _find_hostage(reach, true)
 		if hg != null and (e == null or hg.pos.distance_to(player.pos) < e.pos.distance_to(player.pos)):
 			_free_hostage(hg)
 			return
@@ -671,38 +753,120 @@ func player_attack(w: int) -> void:
 				Game.message.emit("Silent takedown")
 				return
 			var shock := Game.upgrade_level("shock_shiv") > 0
-			e.take_damage(randi_range(8, 22) * (2 if shock else 1), shock)
+			var dmg := randi_range(10, 24) if baton else randi_range(8, 22)
+			e.take_damage(dmg * (2 if shock else 1), shock)
+			if baton and e.is_alive() and e.kind in ["sentry", "hound"]:
+				_knockback(e)
 		return
-	play_sfx(["", "sidearm", "rifle", "rotary"][w])
+	play_sfx({"slugger": "slugger", "nail": "nail", "arc": "arc", "masterwork": "rifle"}.get(id, ["", "sidearm", "rifle", "rotary"][w]))
 	make_noise(player_tile())
+	if id == "arc":
+		_arc_attack()
+		return
+	for b in bullets:
+		_gun_shot(id)
+
+
+## One bullet down the crosshair. Hostages in front of the target take it.
+## Nail Carbine nails carry on to the next enemy behind, but never past a hostage.
+func _gun_shot(id: String) -> void:
 	var target := _find_target(30.0)
 	var hit_hostage := _find_hostage(30.0, false)
-	if hit_hostage != null and (target == null or hit_hostage.pos.distance_to(player.pos) < target.pos.distance_to(player.pos)):
+	var hd := hit_hostage.pos.distance_to(player.pos) if hit_hostage != null else INF * 1.0
+	if hit_hostage != null and (target == null or hd < target.pos.distance_to(player.pos)):
 		_kill_hostage(hit_hostage)
 		return
 	if target == null:
 		return
+	var d0 := target.pos.distance_to(player.pos)
+	_bullet_hit(target, id)
+	if Game.WEAPONS[id].get("pierce", false):
+		var nxt := _find_target(30.0, target)
+		if nxt != null:
+			var dn := nxt.pos.distance_to(player.pos)
+			if dn > d0 and dn < hd:
+				_bullet_hit(nxt, id)
+
+
+func _bullet_hit(target: Enemy, id: String) -> void:
 	var d := target.pos.distance_to(player.pos)
 	var falloff := 0.025 if Game.has_perk("deadeye") else 0.05
 	var chance := 1.0 if d < 3.5 else clampf(1.0 - (d - 3.5) * falloff, 0.1, 1.0)
 	if randf() > chance:
 		return
 	var dmg := randi_range(5, 16)
-	if w == Game.Weapon.SIDEARM and Game.upgrade_level("ricochet") > 0:
+	if id == "sidearm" and Game.upgrade_level("ricochet") > 0:
 		dmg = int(dmg * 1.4)
 	var close := 3.5 if Game.has_perk("point_blank") else 2.0
 	if d < close:
 		dmg *= 2
 	elif d > 10.0:
 		dmg = int(dmg * 0.6)
-	target.take_damage(dmg, d < close and Game.has_perk("point_blank"))
+	var flinch := (d < close and Game.has_perk("point_blank")) or (id == "slugger" and d < 3.5)
+	target.take_damage(dmg, flinch)
 
 
-func _find_target(max_range: float) -> Enemy:
+## Arc Discharger: the closest enemy within 4 tiles in front of you, if any.
+func arc_target() -> Enemy:
+	var best: Enemy = null
+	var bestd := 4.0
+	for e in enemies:
+		if not e.is_alive():
+			continue
+		var to := e.pos - player.pos
+		var d := to.length()
+		if d < bestd and absf(angle_difference(player.angle, to.angle())) < 0.6 and has_los(player.pos, e.pos):
+			best = e
+			bestd = d
+	return best
+
+
+func _arc_attack() -> void:
+	var t := arc_target()
+	if t == null:
+		return
+	var dmg := randi_range(7, 16)
+	var first_pos := t.pos
+	t.take_damage(dmg, true)
+	_spark(first_pos)
+	var second: Enemy = null
+	var bd := 3.0
+	for e in enemies:
+		if e != t and e.is_alive():
+			var dd := e.pos.distance_to(first_pos)
+			if dd < bd and has_los(first_pos, e.pos):
+				second = e
+				bd = dd
+	if second != null:
+		second.take_damage(maxi(1, dmg / 2), true)
+		_spark(second.pos)
+
+
+func _spark(at: Vector2) -> void:
+	var s := _make_sprite("arc_0", at)
+	effects.append({"node": s, "t": 0.0, "prefix": "arc_", "frames": 2})
+
+
+## Breaching Baton: shove a Sentry or Hound one tile away from Rook.
+func _knockback(e: Enemy) -> void:
+	var away := e.pos - player.pos
+	var dir := Vector2i(signi(roundi(signf(away.x))), 0) if absf(away.x) > absf(away.y) else Vector2i(0, signi(roundi(signf(away.y))))
+	var nt := e.tile + dir
+	if not in_bounds(nt) or not _walkable_for_enemies(nt) or reservations.has(nt) or doors.has(nt) or _player_overlaps(nt):
+		return
+	release(e.tile, e)
+	release(e.target, e)
+	e.tile = nt
+	e.target = nt
+	e.pos = Vector2(nt.x + 0.5, nt.y + 0.5)
+	reserve(nt, e)
+
+
+func _find_target(max_range: float, exclude: Enemy = null) -> Enemy:
 	var best: Enemy = null
 	var bestd := INF * 1.0
 	for e in enemies:
-		if not e.is_alive():
+		if not e.is_alive() or e == exclude:
 			continue
 		var to := e.pos - player.pos
 		var d := to.length()
@@ -759,10 +923,16 @@ func _shiv_wall() -> void:
 func _free_hostage(hg: Hostage) -> void:
 	hg.free_hostage()
 	Game.hostages += 1
-	Game.add_score(HOSTAGE_SCORE)
 	Game.earn_scrip(HOSTAGE_SCRIP)
 	play_sfx("secret")
 	main.hud.flash_pickup()
+	if Game.is_protocol("ghost"):
+		Game.add_score(2000)
+		Game.give_ammo(6)
+		var left := Game.hostages_total - Game.hostages
+		Game.message.emit("Hostage freed! +6 rounds" + (" - %d to go" % left if left > 0 else " - the exit is open!"))
+		return
+	Game.add_score(HOSTAGE_SCORE)
 	if randf() < 0.5:
 		Game.ammo = mini(Game.max_ammo(), Game.ammo + 6)
 		Game.message.emit("Hostage freed! They slip you 6 rounds")
@@ -779,6 +949,10 @@ func _kill_hostage(hg: Hostage) -> void:
 	Game.hostages_lost += 1
 	Game.score = maxi(0, Game.score - 2000)
 	play_sfx("die", hg.pos)
+	if Game.is_protocol("daily") and Game.score_mult > 1.0:
+		Game.score_mult = 1.0
+		Game.message.emit("You shot a hostage! Multiplier reset to x1.0")
+		return
 	if was_bound:
 		Game.message.emit("You shot a hostage! (-2000)")
 	else:
@@ -788,6 +962,332 @@ func _kill_hostage(hg: Hostage) -> void:
 func on_hostage_gone(hg: Hostage) -> void:
 	blockers[_i(hg.tile)] = 0
 	_field_timer = 0.0
+
+
+# ================================================================ debug
+
+## --goto=<feature>: puts the player in front of a room feature for testing.
+## Returns false when this floor doesn't have it.
+func debug_goto(what: String) -> bool:
+	var target := Vector2i(-1, -1)
+	var dir := Vector2i.ZERO
+	match what:
+		"range":
+			if range_data.is_empty():
+				return false
+			target = range_data.spot
+			dir = -range_data.dir
+		"terminal", "locker", "breaker", "exit":
+			var want: int = {"terminal": TERMINAL_TEX, "locker": LOCKER_TEX, "breaker": 6, "exit": EXIT_TEX}[what]
+			for i in walls.size():
+				if walls[i] == want:
+					var wt := Vector2i(i % width, i / width)
+					for d in DIRS:
+						var f: Vector2i = wt + d
+						if in_bounds(f) and not _is_wall(f) and blockers[_i(f)] == 0 and not doors.has(f):
+							target = f
+							dir = -d
+							break
+					break
+		"lockin":
+			if lockins.is_empty():
+				return false
+			var r: Rect2i = lockins[0].rect
+			target = r.get_center() + Vector2i(0, 2)
+			dir = Vector2i(0, -1)
+		"bounty", "standoff":
+			for e in enemies:
+				if (what == "bounty" and e.kind == "crimson") or (what == "standoff" and e.facing != Vector2i.ZERO and _standoff_guard(e)):
+					target = e.tile - e.facing * 0
+					for k in range(4, 0, -1):
+						var t := e.tile + e.facing * k
+						if in_bounds(t) and not _is_wall(t) and blockers[_i(t)] == 0:
+							target = t
+							break
+					dir = -e.facing
+					break
+	if target.x < 0:
+		return false
+	player.pos = Vector2(target.x + 0.5, target.y + 0.5)
+	player.angle = Vector2(dir).angle()
+	return true
+
+
+func _standoff_guard(e: Enemy) -> bool:
+	for hg in hostages:
+		if hg.pos.distance_to(e.pos) < 3.5 and room_of[_i(hg.tile)] == room_of[_i(e.tile)]:
+			return true
+	return false
+
+
+# ================================================================ protocols & room features
+
+## Why the exit switch won't work yet ("" when it will).
+func exit_blocked_reason() -> String:
+	if Game.is_protocol("ghost") and Game.hostages < Game.hostages_total:
+		return "EXIT SEALED: free every hostage first (%d / %d)" % [Game.hostages, Game.hostages_total]
+	if Game.is_protocol("gauntlet"):
+		var need := ceili(Game.kills_total * 0.75)
+		var all_free := Game.hostages_total > 0 and Game.hostages == Game.hostages_total
+		if Game.kills < need and not all_free:
+			return "ELEVATOR LOCKED: %d / %d kills, or free every hostage" % [Game.kills, need]
+	return ""
+
+
+func _check_clean_room(r: int) -> void:
+	if r < 0 or clean_rooms.has(r):
+		return
+	var clean := true
+	for o in enemies:
+		if o.home_room == r:
+			if o.is_alive():
+				return
+			if o.gun_alerted:
+				clean = false
+	clean_rooms[r] = true
+	if clean:
+		Game.score_mult += 0.2
+		Game.message.emit("Clean room! Score multiplier x%.1f" % Game.score_mult)
+
+
+func _set_breaker(color: String, on: bool) -> void:
+	for tid in BREAKER_TEX:
+		if BREAKER_TEX[tid] == color and tid < _wall_mats.size():
+			_wall_mats[tid].albedo_texture = Tex.tex("breaker_%s%s" % [color, "_on" if on else ""])
+
+
+func _use_terminal() -> void:
+	if puzzle_order.is_empty():
+		return
+	if puzzle_solved:
+		Game.message.emit("Override complete. The vault is open.")
+		return
+	var letters := ""
+	var names := PackedStringArray()
+	for c in puzzle_order:
+		letters += c[0]
+		names.append(c.to_upper())
+	play_sfx("chime_" + letters)
+	Game.message.emit("OVERRIDE SEQUENCE: " + " - ".join(names))
+
+
+func _use_breaker(color: String, t: Vector2i) -> void:
+	if puzzle_order.is_empty() or puzzle_solved:
+		return
+	if puzzle_order.find(color) < puzzle_step:
+		Game.message.emit("That breaker is already thrown")
+		return
+	if color == puzzle_order[puzzle_step]:
+		puzzle_step += 1
+		_set_breaker(color, true)
+		play_sfx("chime_" + color[0])
+		if puzzle_step >= puzzle_order.size():
+			puzzle_solved = true
+			for d in doors.values():
+				if d.key == "vault":
+					d.unlocked = true
+			_wall_mats[TERMINAL_TEX].albedo_texture = Tex.tex("terminal_on")
+			_field_timer = 0.0
+			play_sfx("secret")
+			Game.message.emit("Override accepted - the contraband vault is open!")
+		else:
+			Game.message.emit("Breaker %d / 3 accepted" % puzzle_step)
+		return
+	# Wrong breaker: a local alarm pulse (as loud as a sidearm shot) and a reset.
+	puzzle_step = 0
+	for c in puzzle_order:
+		_set_breaker(c, false)
+	play_sfx("alarm", Vector2(t.x + 0.5, t.y + 0.5))
+	make_noise(player_tile())
+	Game.message.emit("Wrong breaker! An alarm pulse rings out - sequence reset")
+
+
+func _use_locker() -> void:
+	if Game.locker_pending:
+		Game.message.emit("Your Masterwork Auto Rifle will be waiting on the next floor")
+	elif Game.owns("rifle"):
+		Game.take_weapon("rifle")
+		Game.locker_pending = true
+		play_sfx("door")
+		Game.message.emit("Auto Rifle confiscated - a MASTERWORK returns next floor")
+	elif Game.owns("masterwork"):
+		Game.message.emit("Confiscation Locker: nothing left to upgrade")
+	else:
+		play_sfx("denied")
+		Game.message.emit("Confiscation Locker: feed it an Auto Rifle to get a Masterwork back")
+
+
+# ---------------------------------------------------------------- calibration range
+
+func _start_range() -> void:
+	if range_data.is_empty():
+		return
+	if range_state == 2:
+		Game.message.emit("The calibration pod is spent")
+		return
+	if range_state == 1:
+		return
+	for e in enemies:
+		if e.is_alive() and e.state != Enemy.IDLE:
+			play_sfx("denied")
+			Game.message.emit("Not while guards are hunting you")
+			return
+	range_state = 1
+	range_t = RANGE_TIME
+	range_ammo = 12
+	range_foul = false
+	var spot: Vector2i = range_data.spot
+	var dir: Vector2i = range_data.dir
+	player.locked = true
+	player.pos = Vector2(spot.x + 0.5, spot.y + 0.5)
+	player.angle = Vector2(dir).angle()
+	_range_saved = [Game.current_weapon, Game.slot_active[1]]
+	Game.current_weapon = Game.Weapon.SIDEARM
+	Game.slot_active[1] = "sidearm"
+	var lanes: Array = range_data.lanes
+	for li in lanes.size():
+		var spd := 1.1 + 0.45 * li
+		range_targets.append(_range_target(true, lanes[li], randf() * TAU, spd))
+		if li != 1:
+			range_targets.append(_range_target(false, lanes[li], randf() * TAU, -spd * 0.8))
+	play_sfx("key")
+	Game.message.emit("CALIBRATION: shoot the red targets, spare the hostages!")
+
+
+func _range_target(foe: bool, dist: float, phase: float, speed: float) -> Dictionary:
+	var node := _make_sprite("target_foe" if foe else "target_hostage", Vector2.ZERO)
+	return {"node": node, "foe": foe, "d": dist, "phase": phase, "speed": speed, "down": false, "pos": Vector2.ZERO}
+
+
+func _tick_range(delta: float) -> void:
+	range_t -= delta
+	var r: Rect2i = range_data.rect
+	var dir: Vector2i = range_data.dir
+	var perp := Vector2(dir.y, dir.x)
+	var spot: Vector2i = range_data.spot
+	var origin := Vector2(spot.x + 0.5, spot.y + 0.5)
+	var lateral_center := Vector2(r.position) + Vector2(r.size) / 2.0
+	var half := (r.size.y if dir.x != 0 else r.size.x) / 2.0 - 0.6
+	var foes_left := 0
+	for tg in range_targets:
+		var base: Vector2 = origin + Vector2(dir) * tg.d
+		# Lateral coordinate measured from the room's centre line.
+		var lat := (lateral_center - base).dot(perp)
+		var p: Vector2 = base + perp * (lat + half * sin(range_t * tg.speed + tg.phase))
+		tg.pos = p
+		tg.node.position = Vector3(p.x, 0.5, p.y)
+		if tg.foe and not tg.down:
+			foes_left += 1
+	if foes_left == 0:
+		_finish_range(not range_foul, "You clipped a hostage cutout" if range_foul else "")
+	elif range_t <= 0.0:
+		_finish_range(false, "Time's up")
+	elif range_ammo <= 0 and player.fire_cd <= 0.0:
+		_finish_range(false, "Out of calibration rounds")
+
+
+func _range_shot() -> void:
+	play_sfx("sidearm")
+	var best: Dictionary = {}
+	var bestd := INF * 1.0
+	for tg in range_targets:
+		if tg.down:
+			continue
+		var to: Vector2 = tg.pos - player.pos
+		var d := to.length()
+		if d < bestd and absf(angle_difference(player.angle, to.angle())) <= atan2(0.3, d) + 0.01:
+			best = tg
+			bestd = d
+	if best.is_empty():
+		return
+	best.down = true
+	best.node.visible = false
+	_spark(best.pos)
+	if not best.foe:
+		range_foul = true
+		play_sfx("denied")
+		Game.message.emit("You hit a hostage cutout!")
+	else:
+		play_sfx("pickup")
+
+
+func _finish_range(success: bool, why: String) -> void:
+	range_state = 2
+	player.locked = false
+	for tg in range_targets:
+		tg.node.queue_free()
+	range_targets.clear()
+	if _range_saved.size() == 2:
+		Game.slot_active[1] = _range_saved[1]
+		Game.current_weapon = _range_saved[0]
+	if not success:
+		play_sfx("denied")
+		Game.message.emit("Calibration failed: " + why)
+		return
+	var spot: Vector2i = range_data.spot
+	var dir: Vector2i = range_data.dir
+	var perp := Vector2(dir.y, dir.x)
+	var row := Vector2(spot.x + 0.5, spot.y + 0.5) + Vector2(dir)
+	_spawn_item("ammo16", row - perp, "ammo", "range")
+	_spawn_item("medkit_prize", row, "medkit", "range")
+	_spawn_item("prize", row + perp, "idol", "range")
+	play_sfx("secret")
+	Game.message.emit("Calibration passed! Take ONE reward: ammo, full health or +2500")
+
+
+# ---------------------------------------------------------------- hound lock-in
+
+func _maybe_trigger_lockin(at: Vector2) -> void:
+	for li in lockins:
+		if li.state == 0 and (li.rect as Rect2i).has_point(Vector2i(floori(at.x), floori(at.y))):
+			_trigger_lockin(li)
+
+
+func _lockin_doors(li: Dictionary) -> Array:
+	var out := []
+	var gr: Rect2i = (li.rect as Rect2i).grow(1)
+	for d in doors.values():
+		if gr.has_point(d.tile) and not (li.rect as Rect2i).has_point(d.tile):
+			out.append(d)
+	return out
+
+
+func _trigger_lockin(li: Dictionary) -> void:
+	li.state = 1
+	li.t = LOCKIN_TIME
+	for d in _lockin_doors(li):
+		if d.key == "":
+			d.unlocked = false
+			d.close()
+	for k in li.cages.size():
+		var t: Vector2i = li.cages[k]
+		li.nodes[k].texture = Tex.tex("cage_open")
+		var e := Enemy.new()
+		add_child(e)
+		e.setup(self, "hound", t)
+		e.home_room = room_of[_i(t)]
+		enemies.append(e)
+		reserve(t, e)
+		e.alert()
+		Game.kills_total += 1
+	_field_timer = 0.0
+	play_sfx("alarm")
+	Game.message.emit("LOCK-IN! The doors seal and the cages open - survive 12 seconds")
+
+
+func _tick_lockins(delta: float) -> void:
+	for li in lockins:
+		if li.state != 1:
+			continue
+		li.t -= delta
+		if li.t <= 0.0:
+			li.state = 2
+			for d in _lockin_doors(li):
+				if d.key == "":
+					d.unlocked = true
+			_field_timer = 0.0
+			play_sfx("key")
+			Game.message.emit("The lock-in ends - the doors unseal")
 
 
 func damage_player(n: int) -> void:
@@ -809,6 +1309,8 @@ func on_enemy_killed(e: Enemy) -> void:
 	release(e.tile, e)
 	release(e.target, e)
 	play_sfx("die", e.pos)
+	if Game.is_protocol("daily"):
+		_check_clean_room(e.home_room)
 	var drop_tile := Vector2i(floori(e.pos.x), floori(e.pos.y))
 	var drop_pos := Vector2(drop_tile.x + 0.5, drop_tile.y + 0.5)
 	match e.kind:
@@ -821,6 +1323,17 @@ func on_enemy_killed(e: Enemy) -> void:
 			for i in 4:
 				_explode(e.pos + Vector2(randf_range(-0.4, 0.4), randf_range(-0.4, 0.4)), false)
 			Game.message.emit("The Overseer is down! It dropped the GOLD keycard")
+		"suboverseer":
+			_spawn_item("ammo", drop_pos)
+			_spawn_item("medkit", drop_pos + Vector2(0.01, 0))
+			for i in 3:
+				_explode(e.pos + Vector2(randf_range(-0.4, 0.4), randf_range(-0.4, 0.4)), false)
+			Game.message.emit("The Sub-Overseer is down!")
+		"crimson":
+			_spawn_item("chip", drop_pos)
+			_spawn_item("ammo", drop_pos + Vector2(0.01, 0))
+			_spawn_item("clip", drop_pos + Vector2(-0.01, 0))
+			Game.message.emit("Bounty claimed! It dropped a PERK CHIP and 12 rounds")
 
 
 func _treasure_mult() -> int:
@@ -834,6 +1347,8 @@ func respawn_player() -> void:
 	player.angle = start_angle
 	player.dead = false
 	player.invulnerable = 2.5
+	if range_state == 1:
+		_finish_range(false, "Calibration aborted")
 	player.cam.rotation.z = 0.0
 	for p in projectiles:
 		p.node.queue_free()
@@ -849,9 +1364,18 @@ func respawn_player() -> void:
 
 func _check_pickups() -> void:
 	for it in items.duplicate():
+		if not items.has(it):
+			continue
 		if it.pos.distance_to(player.pos) < 0.6 and _try_pickup(it.type):
 			it.node.queue_free()
 			items.erase(it)
+			if it.has("group"):
+				# A "pick one" reward: the others vanish.
+				for o in items.duplicate():
+					if o.get("group", "") == it.group:
+						o.node.queue_free()
+						items.erase(o)
+			_maybe_trigger_lockin(it.pos)
 
 
 func _try_pickup(type: String) -> bool:
@@ -889,6 +1413,35 @@ func _try_pickup(type: String) -> bool:
 			Game.give_weapon(Game.Weapon.ROTARY, 6)
 			Game.message.emit("Picked up the ROTARY CANNON!")
 			snd = "weapon"
+		"mod_crate":
+			var id := Game.roll_prototype()
+			if id == "":
+				Game.ammo = mini(Game.max_ammo(), Game.ammo + 8)
+				Game.message.emit("Mod crate: you have every prototype - took 8 rounds")
+			else:
+				var slot: int = Game.WEAPONS[id].slot
+				Game.give_weapon(slot, 6, id)
+				Game.message.emit("PROTOTYPE: %s  (press %d again to switch)" % [Game.WEAPONS[id].name, slot + 1])
+			snd = "weapon"
+		"scrip_cache":
+			Game.earn_scrip(15)
+			Game.add_score(1500)
+			Game.message.emit("Contraband cache: +15 Iron Scrip" if Game.is_run() else "Contraband cache: +1500")
+			snd = "secret"
+		"chip":
+			Game.bonus_perks += 1
+			Game.message.emit("PERK CHIP: an extra perk pick after this floor")
+			snd = "secret"
+		"ammo16":
+			if not Game.give_ammo(16): return false
+			Game.message.emit("Calibration reward: 16 rounds")
+		"medkit_prize":
+			Game.health = Game.MAX_HEALTH
+			Game.message.emit("Calibration reward: full health")
+		"prize":
+			Game.add_score(2500)
+			Game.message.emit("Calibration reward: +2500")
+			snd = "secret"
 		"map":
 			Game.has_map = true
 			map_dirty = true
@@ -950,11 +1503,11 @@ func _tick_effects(delta: float) -> void:
 	for fx in effects.duplicate():
 		fx.t += delta
 		var frame := int(fx.t / 0.1)
-		if frame >= 3:
+		if frame >= fx.get("frames", 3):
 			fx.node.queue_free()
 			effects.erase(fx)
 		else:
-			fx.node.texture = Tex.tex("blast_%d" % frame)
+			fx.node.texture = Tex.tex(fx.get("prefix", "blast_") + str(frame))
 
 
 func play_sfx(sfx_name: String, at = null) -> void:

@@ -43,11 +43,17 @@ Godot_v4.7-stable_mono_win64.exe --path .
 
 ## Modes
 - **Escape run (roguelite, ENTER on the title screen):**
-  - **The Cell:** a run starts in Rook's cell, where banked Iron Scrip buys permanent upgrades: Hidden Stash, Acoustic Dampener, Cartographer, Shock Shiv, Ricochet Sidearm and Spare Clone.
+  - **The Cell:** a run starts in Rook's cell, where banked Iron Scrip buys permanent upgrades: Hidden Stash, Acoustic Dampener, Cartographer, Shock Shiv, Ricochet Sidearm and Spare Clone. Press **P** (touch: MODE) to pick an Escape Protocol before you start.
   - **Floors:** Floors 1 and 2 (Holding Cells / red keycard, The Foundry / blue keycard) are generated fresh every run. Floor 3 is the hand-made Overseer arena.
   - **Lives:** you start with 1 life (2 with Spare Clone). Dying with a spare life respawns you at the floor start with your gear, and dead enemies stay dead. With no lives left, the run is over.
   - **Iron Scrip:** earned from kills, treasure, cleared floors, perfect tallies and beating the boss. It's saved as you earn it, so a failed run still pays.
   - **Perks:** each perfect tally category (100% kills, secrets, treasure or hostages, or beating par) earns a pick-1-of-3 perk at the Smuggler's Terminal for the rest of the run.
+- **Escape Protocols (run modes):**
+  - **Standard Escape:** two generated floors, then the Overseer's arena.
+  - **Ghost Protocol:** start with 0 ammo, the Ghost of 4471 perk and every map revealed. Three generated floors with no boss. Each exit opens only once every hostage on the floor is free, and each hostage gives +6 ammo and 2,000 points.
+  - **Iron Gauntlet:** endless 24×24 sectors with no keycards. The elevator opens at 75% kills or when every hostage is free, and two ammo boxes always wait beside it. Every 3rd sector has a Sub-Overseer, and every 2nd sector gives a free perk pick. The run ends when you run out of lives.
+  - **Arsenal Scramble:** slots 2–4 are issued a random gun at the start of every floor (Sidearm or Slugger, Auto Rifle / Nail Carbine / Masterwork, Rotary or Arc Discharger).
+  - **Daily Lockdown:** today's seed, the same for every player, with Cell upgrades switched off. Every room whose guards all die without any of them being alerted by gunfire adds +0.2x to your score multiplier. Shooting a hostage resets it to x1.0. Your best score for each day is saved on your device.
 - **Classic campaign (C on the title screen):** the three hand-made floors with classic rules: 3 lives, and dying restarts the floor with a Sidearm and 10 rounds.
 
 ## Procedural floors (`scripts/level_gen.gd`)
@@ -58,8 +64,22 @@ Godot_v4.7-stable_mono_win64.exe --path .
 - **Cover:** rooms 7×7 or larger get pillars.
 - **Checks:** every floor is checked with the same validator as the hand-made maps and regenerated with a new seed if it fails.
 
+## Room features (generated floors)
+- **Calibration range:** a CALIBRATE console at the end of a long room. Use it while no guards are hunting you and Rook is locked at the window for 8 seconds with a free 12-round calibration clip. Red targets slide across at three distances, mixed with hostage cutouts. Hit every red target without clipping a cutout, then take **one** reward: 16 rounds, full health or +2,500.
+- **Security terminal:** use the OVERRIDE screen to hear and see a 3-colour sequence, then throw the red, blue and gold breakers on the room's walls in that order. A wrong breaker sets off an alarm pulse (as loud as a sidearm shot) and resets the sequence. Solving it opens a purple vault door with an Iron Scrip cache, a prototype mod crate and a gem.
+- **Hostage standoff:** a guard stands at the far end of a room facing the doorway, with two hostages tied up in the line of fire and an idol or extra life behind it. Sneak in through the room's other door, or let the guard see you and step back so it walks out past the hostages.
+- **Hound lock-in (Foundry floors):** the prison map and two gems sit in the middle of a big room with two pillars. Taking any of them seals the doors for 12 seconds and opens three Hound cages.
+- **Confiscation Locker (floors 1–2 of Standard, Ghost and Daily runs):** feed it your Auto Rifle and finish the floor without it. A Masterwork Auto Rifle (25% faster, 30% quieter, 1 ammo every 2nd shot) waits for you on the next floor.
+- **Bounty Warden (once per run):** a Crimson Warden in a side room, marked on the map with a skull from the start. It ignores distant gunfire and won't leave its room until it has seen you. After each 5-shot burst it vents for 1.5 seconds and takes triple damage. It drops a Perk Chip (an extra perk pick after the floor) and 12 rounds.
+
 ## Game rules
-- **Weapons:** Shiv (silent melee), Sidearm (semi-auto), Auto Rifle, Rotary Cannon. All guns share one ammo pool, capped at 99.
+- **Weapons:** four slots that share one ammo pool, capped at 99:
+  - **Slot 1:** Shiv (silent melee). Its prototype is the **Breaching Baton**: slower, 1.8-tile reach, and it knocks Sentries and Hounds back a tile.
+  - **Slot 2:** Sidearm. Its prototype is the **Directorate Slugger**: 2 ammo for two bullets, and enemies within 3.5 tiles always flinch.
+  - **Slot 3:** Auto Rifle. Its prototypes are the **Nail Carbine** (nails carry on to the enemy behind but stop at hostages, half the noise) and the **Masterwork** (from the Confiscation Locker).
+  - **Slot 4:** Rotary Cannon. Its prototype is the **Arc Discharger**: locks onto the closest enemy within 4 tiles and jumps to a second one for half damage, never hits hostages, and won't fire without a target.
+
+  Prototypes come from **mod crates** (secret stashes and contraband vaults). Picking one up equips it, and pressing the slot's key again switches between the guns in that slot. The mouse wheel and the touch SWAP button step through everything you carry. Both melee weapons cut hostages free and pry open secret walls.
 - **Noise:** gunfire alerts enemies through open space and open doors. Closed doors block the sound, and the shiv makes none.
 - **Enemies:** Sentry (basic gunner, drops ammo), Hound (fast melee and can't open doors), Warden (armored burst-fire, drops the Auto Rifle).
 - **Boss:** Floor 3's Overseer has a rotary-cannon arm and shoulder launchers that fire dodgeable plasma bolts. It sees in all directions and drops the gold keycard to the exit vault. A health bar appears once it spots you.
@@ -113,9 +133,13 @@ unreachable exit.
 `--touch` shows the phone controls on desktop.
 
 Roguelite flags:
-- `--run --seed=N --level=N`: jump straight into a run floor.
+- `--run --seed=N --level=N`: jump straight into a run floor. Debug runs never write to the real save.
+- `--protocol=ghost|gauntlet|scramble|daily`: the run's protocol (use with `--run`).
+- `--goto=range|terminal|breaker|locker|lockin|bounty|standoff|exit`: start in front of a room feature.
+- `--give=baton,slugger,nail,masterwork,arc`: with `--arsenal`, also hand out prototypes.
+- `--no-save`: never write `user://meta.cfg`.
 - `--cell`: open the Cell shop.
 - `--perk`: open the perk terminal.
 - `--gen-test=N`: generate N floors per theme, validate them and print a sample map.
 
-Note: runs save Iron Scrip to `user://meta.cfg`, so test runs add to your real save.
+Note: normal runs save Iron Scrip to `user://meta.cfg`. Launches with `--run` or `--no-save` don't.
