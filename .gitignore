@@ -1,0 +1,8 @@
+# Godot cache and local builds
+.godot/
+build/
+*.tmp
+# Design notes kept local (not part of the game)
+/*Godot Spec.md
+__pycache__/
+*.blend1
