@@ -240,7 +240,7 @@ func _build_menu() -> void:
 	var items: Array = []
 	match main.state:
 		"title":
-			items = [["ESCAPE RUN", KEY_ENTER], ["CLASSIC", KEY_C], ["EASY", KEY_1], ["NORMAL", KEY_2], ["HARD", KEY_3]]
+			items = [["ESCAPE RUN", KEY_ENTER], ["PURGE", KEY_H], ["CLASSIC", KEY_C], ["EASY", KEY_1], ["NORMAL", KEY_2], ["HARD", KEY_3]]
 		"cell":
 			for n in Game.UPGRADE_ORDER.size():
 				items.append(["BUY %d" % (n + 1), KEY_1 + n])

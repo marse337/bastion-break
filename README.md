@@ -55,7 +55,7 @@ Godot_v4.7-stable_mono_win64.exe --path .
   - **Iron Gauntlet:** endless 24×24 sectors with no keycards. The elevator opens at 75% kills or when every hostage is free, and two ammo boxes always wait beside it. Every 3rd sector has a Sub-Overseer, and every 2nd sector gives a free perk pick. The run ends when you run out of lives.
   - **Arsenal Scramble:** slots 2–4 are issued a random gun at the start of every floor (Sidearm or Slugger, Auto Rifle / Nail Carbine / Masterwork, Rotary or Arc Discharger).
   - **Daily Lockdown:** today's seed, the same for every player, with Cell upgrades switched off. Every room whose guards all die without any of them being alerted by gunfire adds +0.2x to your score multiplier. Shooting a hostage resets it to x1.0. Your best score for each day is saved on your device.
-  - **Purge Protocol:** the Standard Escape floors, with score x1.5 and a hunter on every floor (below).
+  - **Purge Protocol:** the Standard Escape floors, with score x1.5 and a hunter on every floor (below). Press **H** on the title screen (touch: PURGE) to jump straight to it.
 - **Classic campaign (C on the title screen):** the three hand-made floors with classic rules: 3 lives, and dying restarts the floor with a Sidearm and 10 rounds.
 
 ## Purge Protocol: the Hunter Warden

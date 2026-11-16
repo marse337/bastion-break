@@ -178,11 +178,14 @@ func show_title() -> void:
 		"You are Rook, prisoner 4471 of the Iron Directorate.\n" +
 		"Break out of the Bastion, one floor at a time.\n\n" +
 		(_touch_help() if TouchControls.active else _keyboard_help()))
+	hud.show_title_badge(("NEW!  %s PURGE PROTOCOL: an unkillable Hunter Warden stalks you") %
+		("tap" if TouchControls.active else "H -"))
 
 
 func _keyboard_help() -> String:
-	return ("ENTER - new escape run (roguelite)       C - classic campaign\n" +
-		"Difficulty:  %s   (press 1 / 2 / 3)\n\n" % Game.DIFFICULTY_NAMES[Game.difficulty] +
+	return ("ENTER - new escape run (%s)       C - classic campaign\n" % Game.PROTOCOLS[Game.protocol_choice][0] +
+		"\n" +  # the orange Purge line (hud.title_badge) sits here
+		"Difficulty:  %s   (press 1 / 2 / 3)\n" % Game.DIFFICULTY_NAMES[Game.difficulty] +
 		"WASD / arrows - move & turn     Mouse - turn     Shift - run\n" +
 		"Left click / Ctrl - fire     E / Space / right click - open & use\n" +
 		"1-4 / mouse wheel - weapons     Tab - map     Esc - pause\n" +
@@ -190,7 +193,8 @@ func _keyboard_help() -> String:
 
 
 func _touch_help() -> String:
-	return ("Difficulty:  %s\n\n" % Game.DIFFICULTY_NAMES[Game.difficulty] +
+	return ("Escape run: %s\n\n" % Game.PROTOCOLS[Game.protocol_choice][0] +
+		"Difficulty:  %s\n\n" % Game.DIFFICULTY_NAMES[Game.difficulty] +
 		"Left thumb: move (push far to run)     Right side: drag to turn\n" +
 		"Tap the map to enlarge it")
 
@@ -631,6 +635,12 @@ func _input(event: InputEvent) -> void:
 				show_cell()
 			elif event is InputEventKey and event.pressed and event.physical_keycode == KEY_C:
 				start_classic(0)
+			elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_H:
+				# Shortcut to the Purge Protocol: pick it and go to the Cell.
+				Game.protocol_choice = "purge"
+				Game.save_settings()
+				play_sfx("pickup")
+				show_cell()
 			elif num >= 0 and num < 3:
 				Game.difficulty = num
 				Game.save_settings()
