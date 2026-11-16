@@ -48,7 +48,8 @@ Godot_v4.7-stable_mono_win64.exe --path .
   - **Floors:** Floors 1 and 2 (Holding Cells / red keycard, The Foundry / blue keycard) are generated fresh every run. Floor 3 is the hand-made Overseer arena.
   - **Lives:** you start with 1 life (2 with Spare Clone). Dying with a spare life respawns you at the floor start with your gear, and dead enemies stay dead. With no lives left, the run is over.
   - **Iron Scrip:** earned from kills, treasure, cleared floors, perfect tallies and beating the boss. It's saved as you earn it, so a failed run still pays.
-  - **Perks:** each perfect tally category (100% kills, secrets, treasure or hostages, or beating par) earns a pick-1-of-3 perk at the Smuggler's Terminal for the rest of the run.
+  - **Perks:** each perfect tally category (100% kills, secrets, treasure or hostages, or beating par) earns a pick-1-of-3 perk at the Smuggler's Terminal for the rest of the run. Choose with A / D or the arrows and ENTER, press 1-3, or click a card.
+  - **Floor tally:** the floor-cleared screen counts up one category at a time (bars, PERFECT and UNDER PAR stamps), then the bonus, score, Iron Scrip and perk picks. SPACE or ENTER skips to the end.
 - **Game modes:** chosen from the GAME MODE dropdown on the title screen (click the box or press M; arrows change it; ENTER or PLAY starts). Every mode below except the classic campaign goes through the Cell first, where P still switches protocol. **Escape Protocols (run modes):**
   - **Standard Escape:** two generated floors, then the Overseer's arena.
   - **Ghost Protocol:** start with 0 ammo, the Ghost of 4471 perk and every map revealed. Three generated floors with no boss. Each exit opens only once every hostage on the floor is free, and each hostage gives +6 ammo and 2,000 points.
@@ -66,7 +67,7 @@ Godot_v4.7-stable_mono_win64.exe --path .
 - **Rocket pods:** each floor has two wall-mounted ROCKET PODs, shown in green on the map. When the Hunter is in a pod's line of sight (within 16 tiles), press USE on the pod to fire a homing rocket. That scraps the Hunter for the rest of the floor and pays +5,000 points, an ammo box and 3 scrap.
 - **Warnings:** a countdown bar until it's released, heavy footsteps that get louder as it closes in (heard through walls), and a pulsing red diamond on the map at all times (blue while it's stunned).
 - **If it catches you:** the clone wakes at the elevator, the Hunter goes back inside, its 45-second timer restarts, and a free clip waits at the start.
-- **Crafting:** every guard you kill drops scrap (Sentry or Hound 1, Warden 2, Bounty Warden or Sub-Overseer 4, Overseer 6). Press **C** (touch: CRAFT) to open the workbench, which pauses the game:
+- **Crafting:** every guard you kill drops scrap (Sentry or Hound 1, Warden 2, Bounty Warden or Sub-Overseer 4, Overseer 6). A briefing before the first Purge floor walks through this in three animated steps. Press **C** (touch: CRAFT) to open the workbench, which pauses the game; choose with A / D and ENTER, or press 1-3:
 
   | Gadget | Scrap | Key | Effect |
   |---|---|---|---|
@@ -159,6 +160,9 @@ Roguelite flags:
 - `--give=baton,slugger,nail,masterwork,arc`: with `--arsenal`, also hand out prototypes.
 - `--no-save`: never write `user://meta.cfg`.
 - `--modes-open`: open the title screen's game mode list at launch (for screenshots).
+- `--tally`: clear the floor at once with made-up stats, to see the tally screen.
+- `--briefing`: show the Purge briefing even with `--run`.
+- `--keys=KEY@SEC,...`: press real keys after SEC seconds, e.g. `--keys=D@1,Enter@1.5`.
 - `--protocol=purge --hunter-at=SEC`: release the Hunter Warden after SEC seconds instead of 45.
 - `--scrap=N`, `--gadgets` (two of each), `--craft` (open the workbench at the start): crafting tests.
 - `--goto=pod|hunterview`: stand at a rocket pod, or somewhere with a view of the elevator.

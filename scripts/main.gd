@@ -28,6 +28,7 @@ var current_level: Dictionary = {}
 var pending_perks := 0
 var perk_choices: Array[String] = []
 var _args := PackedStringArray()
+var _keytaps: Array = []
 var touch: TouchControls
 var _taps: Array = []
 
@@ -99,6 +100,11 @@ func _ready() -> void:
 			for part in a.substr(6).split(","):
 				var bits := part.split("@")
 				_taps.append([bits[0], float(bits[1])])
+		elif a.begins_with("--keys="):
+			# --keys=KEY@seconds[,...]: inject real key presses (e.g. D@1,Enter@2).
+			for part in a.substr(7).split(","):
+				var bits := part.split("@")
+				_keytaps.append([OS.find_keycode_from_string(bits[0]), float(bits[1])])
 		elif a.begins_with("--hold="):
 			for act in a.substr(7).split(","):
 				Input.action_press(act)
@@ -269,7 +275,7 @@ func _show_perk_choice() -> void:
 		_next_level()
 		return
 	var sub := "Your clean work earned a contraband perk (%d left to pick)." % pending_perks
-	var foot := "" if TouchControls.active else "Press 1 - %d or click a card" % perk_choices.size()
+	var foot := "" if TouchControls.active else "A / D or arrows: choose     ENTER: take it     1 - %d: quick pick     or click a card" % perk_choices.size()
 	hud.show_perks(sub, perk_choices, foot)
 	if not hud.perk_cards.picked.is_connected(_on_perk_card):
 		hud.perk_cards.picked.connect(_on_perk_card)
@@ -278,6 +284,18 @@ func _show_perk_choice() -> void:
 func _on_perk_card(i: int) -> void:
 	if state == "perk":
 		_pick_perk(i)
+
+
+## -1 / +1 for A / D or the left / right arrows, else 0.
+func _card_step(event: InputEvent) -> int:
+	if not (event is InputEventKey and event.pressed):
+		return 0
+	match event.physical_keycode:
+		KEY_A, KEY_LEFT:
+			return -1
+		KEY_D, KEY_RIGHT:
+			return 1
+	return 0
 
 
 func _pick_perk(i: int) -> void:
@@ -380,6 +398,13 @@ func load_level() -> void:
 		get_tree().quit.call_deferred()
 	if "--alert" in _args:
 		world.alert_all()
+	if "--tally" in _args:
+		# Debug: clear the floor at once with some made-up stats.
+		Game.kills = Game.kills_total * 3 / 4
+		Game.secrets = Game.secrets_total
+		Game.treasure = Game.treasure_total / 2
+		Game.level_time = 95.0
+		on_level_exit.call_deferred()
 	if "--arsenal" in _args:
 		for s in 4:
 			Game.give_weapon(s, 0)
@@ -393,6 +418,8 @@ func load_level() -> void:
 	hud.hide_screen()
 	hud.death_alpha = 0.0
 	_capture_mouse()
+	if Game.is_protocol("purge") and Game.level_index == 0 and ("--briefing" in _args or not "--run" in _args):
+		_show_briefing()
 	hud.show_message("FLOOR %d: %s" % [Game.level_index + 1, world.level_name.to_upper()])
 	if floor_note != "":
 		get_tree().create_timer(2.6).timeout.connect(func(): if world != null: hud.show_message(floor_note))
@@ -453,8 +480,9 @@ func on_level_exit() -> void:
 	if t < par:
 		bonus += (par - t) * 50
 		perfect += 1
+	var score_before := Game.score
 	Game.add_score(bonus)
-	var extra := ""
+	var score_after := Game.score
 	if Game.is_run():
 		Game.earn_scrip(10 + perfect * 10)
 		Game.save_meta()
@@ -462,17 +490,20 @@ func on_level_exit() -> void:
 		Game.bonus_perks = 0
 		if Game.is_protocol("gauntlet") and (Game.level_index + 1) % 2 == 0:
 			pending_perks += 1
-		extra = "\nIron Scrip this floor: %d" % Game.floor_scrip
-		if perfect > 0:
-			extra += "\nPerfect categories: %d" % perfect
-		if pending_perks > 0:
-			extra += "\nPerk picks: %d" % pending_perks
-	hud.show_screen("FLOOR %d CLEARED" % (Game.level_index + 1),
-		"Kills       %3d%%   (%d / %d)\nSecrets     %3d%%   (%d / %d)\nTreasure    %3d%%   (%d / %d)\nHostages    %3d%%   (%d / %d freed%s)\n\n" % [
-			kp, Game.kills, Game.kills_total, sp, Game.secrets, Game.secrets_total, tp, Game.treasure, Game.treasure_total,
-			hp, Game.hostages, Game.hostages_total, ", %d lost" % Game.hostages_lost if Game.hostages_lost > 0 else ""] +
-		"Time  %d:%02d     Par  %d:%02d\n" % [t / 60, t % 60, par / 60, par % 60] +
-		"Bonus  %d     Score  %d%s\n\nPress ENTER to continue" % [bonus, Game.score, extra], true)
+	var data := {
+		"rows": [
+			["Kills", Game.kills, Game.kills_total, kp, ""],
+			["Secrets", Game.secrets, Game.secrets_total, sp, ""],
+			["Treasure", Game.treasure, Game.treasure_total, tp, ""],
+			["Hostages", Game.hostages, Game.hostages_total, hp, "(%d lost)" % Game.hostages_lost if Game.hostages_lost > 0 else ""],
+		],
+		"time": t, "par": par, "bonus": score_after - score_before,
+		"score_before": score_before, "score": score_after,
+		"run": Game.is_run(), "scrip": Game.floor_scrip if Game.is_run() else 0, "perks": pending_perks,
+	}
+	hud.show_tally("FLOOR %d CLEARED" % (Game.level_index + 1), data)
+	if not hud.tally_panel.sound.is_connected(play_sfx):
+		hud.tally_panel.sound.connect(play_sfx)
 
 
 ## Daily Lockdown: records the score and returns a line for the end screen.
@@ -555,6 +586,16 @@ func _process(delta: float) -> void:
 			else:
 				Input.action_press(tp[0])
 				tp[1] = 0.05
+	for kt in _keytaps.duplicate():
+		kt[1] -= delta
+		if kt[1] <= 0.0:
+			_keytaps.erase(kt)
+			for down in [true, false]:
+				var e := InputEventKey.new()
+				e.keycode = kt[0]
+				e.physical_keycode = kt[0]
+				e.pressed = down
+				Input.parse_input_event(e)
 	match state:
 		"playing":
 			if Game.is_protocol("purge") and Input.is_action_just_pressed("craft"):
@@ -690,12 +731,27 @@ func _input(event: InputEvent) -> void:
 				else:
 					play_sfx("denied")
 				show_cell()
+		"briefing":
+			if event.is_action_pressed("confirm") or (event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_SPACE):
+				_end_briefing()
 		"perk":
+			var step := _card_step(event)
 			if num >= 0:
 				_pick_perk(num)
+			elif step != 0:
+				hud.perk_cards.move_sel(step)
+				play_sfx("push")
+			elif event.is_action_pressed("confirm"):
+				_pick_perk(hud.perk_cards.selected())
 		"craft":
+			var step := _card_step(event)
 			if num >= 0 and num < Game.GADGET_ORDER.size():
 				_craft(num)
+			elif step != 0:
+				hud.craft_cards.move_sel(step)
+				play_sfx("push")
+			elif event.is_action_pressed("confirm"):
+				_craft(hud.craft_cards.selected())
 			elif event.is_action_pressed("pause") or event.is_action_pressed("craft"):
 				_close_craft()
 		"playing":
@@ -713,7 +769,10 @@ func _input(event: InputEvent) -> void:
 					Game.save_meta()
 				show_title()
 		"tally":
-			if event.is_action_pressed("confirm"):
+			var go: bool = event.is_action_pressed("confirm") or (event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_SPACE)
+			if go and not hud.tally_panel.done():
+				hud.tally_panel.skip()
+			elif go:
 				if Game.is_run() and pending_perks > 0:
 					_show_perk_choice()
 				else:
@@ -732,6 +791,24 @@ func _input(event: InputEvent) -> void:
 					show_title()
 
 
+# ---------------------------------------------------------------- purge briefing
+
+## Before the first Purge floor: what the Hunter is and how crafting works.
+func _show_briefing() -> void:
+	state = "briefing"
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	hud.show_briefing(
+		"%d seconds into every floor the HUNTER WARDEN leaves the elevator. It can't be killed:\n" % int(Game.PURGE_DELAY) +
+		"stun it with 30 damage, outrun it, or rocket it from the green wall pods. Or craft gadgets:",
+		"Tap START" if TouchControls.active else "ENTER or SPACE - start the floor")
+
+
+func _end_briefing() -> void:
+	state = "playing"
+	hud.hide_screen()
+	_capture_mouse()
+
+
 # ---------------------------------------------------------------- purge workbench
 
 func _open_craft() -> void:
@@ -743,7 +820,7 @@ func _open_craft() -> void:
 
 
 func _show_craft() -> void:
-	var foot := "" if TouchControls.active else "1-3 or click: craft     C / Esc: back to the hunt"
+	var foot := "" if TouchControls.active else "A / D: choose     ENTER or 1-3: craft     C / Esc: back to the hunt"
 	hud.show_craft("Scrap: %d      (guards drop scrap when they die)" % Game.scrap, foot)
 
 

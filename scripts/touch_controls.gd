@@ -258,6 +258,8 @@ func _build_menu() -> void:
 			items.append(["BACK", KEY_C])
 		"paused":
 			items = [["RESUME", KEY_ESCAPE], ["QUIT RUN", KEY_Q], ["PIXELS", KEY_F2]]
+		"briefing":
+			items = [["START", KEY_ENTER]]
 		"tally", "runover", "gameover", "victory":
 			items = [["CONTINUE", KEY_ENTER]]
 	if items.is_empty():

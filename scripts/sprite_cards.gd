@@ -22,6 +22,13 @@ static var _used: Dictionary = {}
 
 var _t := 0.0
 var _hover := -1
+## Keyboard-choosable cards (A / D, arrows, ENTER) always keep one card
+## selected: it gets an orange "ENTER" tab and the other cards dim.
+var selectable := false
+var sel_verb := "TAKE"
+## Mouse travel since the cards appeared; hover only takes over the keyboard
+## selection once the mouse has really moved (not just sat under the cursor).
+var _mouse_travel := 0.0
 var _labels: Array[Label] = []
 var _font: Font
 
@@ -66,6 +73,43 @@ func _process(delta: float) -> void:
 	if visible:
 		_t += delta
 		queue_redraw()
+		if selectable:
+			for l in _labels:
+				var i := _card_at(l.position + Vector2(2, 2))
+				l.modulate.a = 1.0 if i == selected() else 0.5
+
+
+## Moves the keyboard selection one card left (-1) or right (+1).
+func move_sel(d: int) -> void:
+	if _card_count() == 0:
+		return
+	_hover = posmod(selected() + d, _card_count())
+	queue_redraw()
+
+
+## Fresh cards: select the first one and wait for real mouse movement.
+func reset_sel() -> void:
+	_hover = 0
+	_mouse_travel = 0.0
+
+
+func selected() -> int:
+	return _hover if _hover >= 0 else 0
+
+
+## Drawn last by subclasses: the ENTER tab on the chosen card, dim the rest.
+func _sel_marks() -> void:
+	if not selectable:
+		return
+	for i in _card_count():
+		var r := _card_rect(i)
+		if i != selected():
+			draw_rect(r, Color(0, 0, 0, 0.4))
+			continue
+		var bob := 1.5 * sin(_t * 6.0)
+		var tab := Rect2(r.get_center().x - 34, r.position.y - 6 + bob, 68, 11)
+		draw_rect(tab, C_HOT)
+		draw_string(_font, Vector2(tab.position.x, tab.position.y + 8.5), "ENTER: " + sel_verb, HORIZONTAL_ALIGNMENT_CENTER, tab.size.x, 7, Color.BLACK)
 
 
 func _card_at(p: Vector2) -> int:
@@ -77,7 +121,12 @@ func _card_at(p: Vector2) -> int:
 
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
-		_hover = _card_at(event.position)
+		_mouse_travel += event.relative.length()
+		if selectable and _mouse_travel < 12.0:
+			return
+		var i := _card_at(event.position)
+		if i >= 0 or not selectable:
+			_hover = i
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var i := _card_at(event.position)
 		if i >= 0:

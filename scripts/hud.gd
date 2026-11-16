@@ -25,6 +25,8 @@ var screen_title: Label
 var screen_body: Label
 var screen_foot: Label
 var mode_select: ModeSelect
+var tally_panel: TallyPanel
+var briefing_cards: BriefingCards
 var perk_cards: PerkCards
 var upgrade_cards: UpgradeCards
 var craft_cards: CraftCards
@@ -100,6 +102,11 @@ func _ready() -> void:
 	# open list draws over the help text.
 	mode_select = ModeSelect.new()
 	screen.add_child(mode_select)
+	tally_panel = TallyPanel.new()
+	screen.add_child(tally_panel)
+	briefing_cards = BriefingCards.new()
+	briefing_cards.position.y = 70
+	screen.add_child(briefing_cards)
 	perk_cards = PerkCards.new()
 	perk_cards.position.y = 58
 	screen.add_child(perk_cards)
@@ -244,10 +251,26 @@ func show_screen(title: String, body: String, compact := false) -> void:
 	craft_cards.visible = false
 	screen_foot.text = ""
 	mode_select.visible = false
+	tally_panel.visible = false
+	briefing_cards.visible = false
 	screen_foot.position.y = H - 42
 	screen_foot.size.y = 14
 	screen_foot.add_theme_font_size_override("font_size", 10)
 	screen.visible = true
+
+
+## Floor cleared: the tally panel counts everything up in waves.
+func show_tally(title: String, data: Dictionary) -> void:
+	show_screen(title, "", true)
+	tally_panel.show_tally(data)
+
+
+## Purge Protocol briefing before the first floor: how crafting works.
+func show_briefing(intro: String, footer: String) -> void:
+	show_screen("PURGE PROTOCOL BRIEFING", intro, true)
+	screen_body.position.y = 38
+	screen_foot.text = footer
+	briefing_cards.show_steps()
 
 
 ## Title screen: story, the game mode dropdown, then difficulty and help.

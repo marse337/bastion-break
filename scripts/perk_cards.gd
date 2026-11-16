@@ -15,7 +15,9 @@ var perks: Array[String] = []
 func show_perks(ids: Array[String]) -> void:
 	perks = ids
 	_t = 0.0
-	_hover = -1
+	reset_sel()
+	selectable = true
+	sel_verb = "TAKE"
 	_clear_labels()
 	var total := CARD_W * ids.size() + GAP * (ids.size() - 1)
 	size = Vector2(total, CARD_H)
@@ -61,6 +63,7 @@ func _draw() -> void:
 			"treasure_hunter": _treasure_hunter(o, t)
 			"muffler": _muffler(o, t)
 		draw_rect(box, C_EDGE, false, 1.0)
+	_sel_marks()
 
 
 func _floor(o: Vector2) -> float:

@@ -14,9 +14,11 @@ var ids: Array = []
 func show_gadgets() -> void:
 	var fresh := not visible
 	ids = Game.GADGET_ORDER.duplicate()
+	selectable = true
+	sel_verb = "CRAFT"
 	if fresh:
 		_t = 0.0
-		_hover = -1
+		reset_sel()
 	_clear_labels()
 	var total := CARD_W * ids.size() + GAP * (ids.size() - 1)
 	size = Vector2(total, CARD_H)
@@ -57,6 +59,7 @@ func _draw() -> void:
 			"mine": _mine(o, t)
 			"brace": _brace(o, t)
 		draw_rect(box, C_EDGE, false, 1.0)
+	_sel_marks()
 
 
 func _floor(o: Vector2) -> float:
