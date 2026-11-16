@@ -99,6 +99,8 @@ func _hit(btn: Dictionary, p: Vector2, slack := 6.0) -> bool:
 func _touch_down(i: int, p: Vector2) -> void:
 	if not _playing():
 		_touches[i] = ""
+		if main.state == "title" and main.hud.mode_select.tap(p):
+			return
 		for m in _menu.size():
 			if (_menu[m].rect as Rect2).grow(3).has_point(p):
 				_pressed_menu = m
@@ -240,7 +242,7 @@ func _build_menu() -> void:
 	var items: Array = []
 	match main.state:
 		"title":
-			items = [["ESCAPE RUN", KEY_ENTER], ["PURGE", KEY_H], ["CLASSIC", KEY_C], ["EASY", KEY_1], ["NORMAL", KEY_2], ["HARD", KEY_3]]
+			items = [["PLAY", KEY_ENTER], ["EASY", KEY_1], ["NORMAL", KEY_2], ["HARD", KEY_3]]
 		"cell":
 			for n in Game.UPGRADE_ORDER.size():
 				items.append(["BUY %d" % (n + 1), KEY_1 + n])

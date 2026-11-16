@@ -49,13 +49,13 @@ Godot_v4.7-stable_mono_win64.exe --path .
   - **Lives:** you start with 1 life (2 with Spare Clone). Dying with a spare life respawns you at the floor start with your gear, and dead enemies stay dead. With no lives left, the run is over.
   - **Iron Scrip:** earned from kills, treasure, cleared floors, perfect tallies and beating the boss. It's saved as you earn it, so a failed run still pays.
   - **Perks:** each perfect tally category (100% kills, secrets, treasure or hostages, or beating par) earns a pick-1-of-3 perk at the Smuggler's Terminal for the rest of the run.
-- **Escape Protocols (run modes):**
+- **Game modes:** chosen from the GAME MODE dropdown on the title screen (click the box or press M; arrows change it; ENTER or PLAY starts). Every mode below except the classic campaign goes through the Cell first, where P still switches protocol. **Escape Protocols (run modes):**
   - **Standard Escape:** two generated floors, then the Overseer's arena.
   - **Ghost Protocol:** start with 0 ammo, the Ghost of 4471 perk and every map revealed. Three generated floors with no boss. Each exit opens only once every hostage on the floor is free, and each hostage gives +6 ammo and 2,000 points.
   - **Iron Gauntlet:** endless 24×24 sectors with no keycards. The elevator opens at 75% kills or when every hostage is free, and two ammo boxes always wait beside it. Every 3rd sector has a Sub-Overseer, and every 2nd sector gives a free perk pick. The run ends when you run out of lives.
   - **Arsenal Scramble:** slots 2–4 are issued a random gun at the start of every floor (Sidearm or Slugger, Auto Rifle / Nail Carbine / Masterwork, Rotary or Arc Discharger).
   - **Daily Lockdown:** today's seed, the same for every player, with Cell upgrades switched off. Every room whose guards all die without any of them being alerted by gunfire adds +0.2x to your score multiplier. Shooting a hostage resets it to x1.0. Your best score for each day is saved on your device.
-  - **Purge Protocol:** the Standard Escape floors, with score x1.5 and a hunter on every floor (below). Press **H** on the title screen (touch: PURGE) to jump straight to it.
+  - **Purge Protocol:** the Standard Escape floors, with score x1.5 and a hunter on every floor (below). Pick it from the GAME MODE dropdown on the title screen.
 - **Classic campaign (C on the title screen):** the three hand-made floors with classic rules: 3 lives, and dying restarts the floor with a Sidearm and 10 rounds.
 
 ## Purge Protocol: the Hunter Warden
@@ -158,6 +158,7 @@ Roguelite flags:
 - `--goto=range|terminal|breaker|locker|lockin|bounty|standoff|exit`: start in front of a room feature.
 - `--give=baton,slugger,nail,masterwork,arc`: with `--arsenal`, also hand out prototypes.
 - `--no-save`: never write `user://meta.cfg`.
+- `--modes-open`: open the title screen's game mode list at launch (for screenshots).
 - `--protocol=purge --hunter-at=SEC`: release the Hunter Warden after SEC seconds instead of 45.
 - `--scrap=N`, `--gadgets` (two of each), `--craft` (open the workbench at the start): crafting tests.
 - `--goto=pod|hunterview`: stand at a rocket pod, or somewhere with a view of the elevator.

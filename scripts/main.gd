@@ -131,6 +131,8 @@ func _ready() -> void:
 		start_classic(clampi(start_level, 0, Levels.LEVELS.size() - 1))
 	else:
 		show_title()
+		if "--modes-open" in _args:
+			hud.mode_select.toggle()
 
 
 func _setup_input() -> void:
@@ -174,17 +176,39 @@ func show_title() -> void:
 	_free_world()
 	state = "title"
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	hud.show_screen("BASTION BREAK",
+	hud.show_title(
 		"You are Rook, prisoner 4471 of the Iron Directorate.\n" +
-		"Break out of the Bastion, one floor at a time.\n\n" +
-		(_touch_help() if TouchControls.active else _keyboard_help()))
-	hud.show_title_badge(("NEW!  %s PURGE PROTOCOL: an unkillable Hunter Warden stalks you") %
-		("tap" if TouchControls.active else "H -"))
+		"Break out of the Bastion, one floor at a time.",
+		"classic" if Game.classic_choice else Game.protocol_choice,
+		_touch_help() if TouchControls.active else _keyboard_help())
+	if not hud.mode_select.play_pressed.is_connected(_play_mode):
+		hud.mode_select.play_pressed.connect(_play_mode)
+		hud.mode_select.changed.connect(_on_mode_changed)
+
+
+## The title dropdown picked a mode: remember it.
+func _on_mode_changed() -> void:
+	var m := hud.mode_select.mode()
+	Game.classic_choice = m == "classic"
+	if m != "classic":
+		Game.protocol_choice = m
+	Game.save_settings()
+	play_sfx("pickup")
+
+
+## PLAY on the title: the classic campaign starts at once; escape runs go
+## through Rook's cell first.
+func _play_mode() -> void:
+	if state != "title":
+		return
+	if hud.mode_select.mode() == "classic":
+		start_classic(0)
+	else:
+		show_cell()
 
 
 func _keyboard_help() -> String:
-	return ("ENTER - new escape run (%s)       C - classic campaign\n" % Game.PROTOCOLS[Game.protocol_choice][0] +
-		"\n" +  # the orange Purge line (hud.title_badge) sits here
+	return ("Click the box or press M for every mode     Arrows - change     ENTER - play\n" +
 		"Difficulty:  %s   (press 1 / 2 / 3)\n" % Game.DIFFICULTY_NAMES[Game.difficulty] +
 		"WASD / arrows - move & turn     Mouse - turn     Shift - run\n" +
 		"Left click / Ctrl - fire     E / Space / right click - open & use\n" +
@@ -193,7 +217,7 @@ func _keyboard_help() -> String:
 
 
 func _touch_help() -> String:
-	return ("Escape run: %s\n\n" % Game.PROTOCOLS[Game.protocol_choice][0] +
+	return ("Tap the game mode box to see every mode\n" +
 		"Difficulty:  %s\n\n" % Game.DIFFICULTY_NAMES[Game.difficulty] +
 		"Left thumb: move (push far to run)     Right side: drag to turn\n" +
 		"Tap the map to enlarge it")
@@ -631,16 +655,20 @@ func _input(event: InputEvent) -> void:
 	var num := _number_pressed(event)
 	match state:
 		"title":
+			var ms := hud.mode_select
+			var key: int = event.physical_keycode if event is InputEventKey and event.pressed else 0
 			if event.is_action_pressed("confirm"):
-				show_cell()
-			elif event is InputEventKey and event.pressed and event.physical_keycode == KEY_C:
+				ms.confirm()
+			elif event.is_action_pressed("pause") and ms.open:
+				ms.close()
+			elif key in [KEY_UP, KEY_W, KEY_LEFT, KEY_A]:
+				ms.step(-1)
+			elif key in [KEY_DOWN, KEY_S, KEY_RIGHT, KEY_D]:
+				ms.step(1)
+			elif key in [KEY_M, KEY_SPACE] and not event.echo:
+				ms.toggle()
+			elif key == KEY_C and not event.echo:
 				start_classic(0)
-			elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_H:
-				# Shortcut to the Purge Protocol: pick it and go to the Cell.
-				Game.protocol_choice = "purge"
-				Game.save_settings()
-				play_sfx("pickup")
-				show_cell()
 			elif num >= 0 and num < 3:
 				Game.difficulty = num
 				Game.save_settings()

@@ -24,7 +24,7 @@ var screen: ColorRect
 var screen_title: Label
 var screen_body: Label
 var screen_foot: Label
-var title_badge: Label
+var mode_select: ModeSelect
 var perk_cards: PerkCards
 var upgrade_cards: UpgradeCards
 var craft_cards: CraftCards
@@ -96,10 +96,10 @@ func _ready() -> void:
 	screen_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	screen_foot = _label(screen, Vector2(0, H - 42), Vector2(W, 14), 10, Color(0.85, 0.88, 0.95))
 	screen_foot.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	# Title screen: the orange "NEW! Purge Protocol" line, on a blank body line.
-	title_badge = _label(screen, Vector2(0, 155), Vector2(W, 16), 11, Color(1.0, 0.6, 0.15))
-	title_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title_badge.visible = false
+	# Title screen: game mode dropdown and PLAY button. Added last so its
+	# open list draws over the help text.
+	mode_select = ModeSelect.new()
+	screen.add_child(mode_select)
 	perk_cards = PerkCards.new()
 	perk_cards.position.y = 58
 	screen.add_child(perk_cards)
@@ -243,17 +243,23 @@ func show_screen(title: String, body: String, compact := false) -> void:
 	upgrade_cards.visible = false
 	craft_cards.visible = false
 	screen_foot.text = ""
-	title_badge.visible = false
+	mode_select.visible = false
 	screen_foot.position.y = H - 42
 	screen_foot.size.y = 14
 	screen_foot.add_theme_font_size_override("font_size", 10)
 	screen.visible = true
 
 
-## The orange call-out line on the title screen.
-func show_title_badge(text: String) -> void:
-	title_badge.text = text
-	title_badge.visible = true
+## Title screen: story, the game mode dropdown, then difficulty and help.
+func show_title(story: String, mode: String, help: String) -> void:
+	show_screen("BASTION BREAK", story)
+	screen_title.position.y = 18
+	screen_body.position.y = 60
+	screen_foot.text = help
+	screen_foot.position.y = 166
+	screen_foot.size.y = 80
+	screen_foot.add_theme_font_size_override("font_size", 9)
+	mode_select.show_mode(mode)
 
 
 ## The perk picker: title, one line of context, then animated cards.

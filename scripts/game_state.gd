@@ -120,6 +120,8 @@ var upgrades := {}
 var protocol := "escape"
 ## The protocol picked in the Cell (saved between sessions).
 var protocol_choice := "escape"
+## The title screen's game mode can also be the classic campaign.
+var classic_choice := false
 ## Daily Lockdown: score multiplier and the best score per day.
 var score_mult := 1.0
 var daily_best := {}
@@ -152,6 +154,7 @@ func _ready() -> void:
 		protocol_choice = cfg.get_value("game", "protocol", "escape")
 		if not PROTOCOLS.has(protocol_choice):
 			protocol_choice = "escape"
+		classic_choice = cfg.get_value("game", "classic", false)
 	var meta := ConfigFile.new()
 	if meta.load(META_PATH) == OK:
 		scrip = meta.get_value("meta", "scrip", 0)
@@ -164,6 +167,7 @@ func save_settings() -> void:
 	cfg.set_value("display", "retro", retro)
 	cfg.set_value("game", "difficulty", difficulty)
 	cfg.set_value("game", "protocol", protocol_choice)
+	cfg.set_value("game", "classic", classic_choice)
 	cfg.save(SETTINGS_PATH)
 
 
