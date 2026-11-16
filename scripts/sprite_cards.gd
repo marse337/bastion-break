@@ -109,7 +109,12 @@ func _sel_marks() -> void:
 		var bob := 1.5 * sin(_t * 6.0)
 		var tab := Rect2(r.get_center().x - 34, r.position.y - 6 + bob, 68, 11)
 		draw_rect(tab, C_HOT)
-		draw_string(_font, Vector2(tab.position.x, tab.position.y + 8.5), "ENTER: " + sel_verb, HORIZONTAL_ALIGNMENT_CENTER, tab.size.x, 7, Color.BLACK)
+		draw_string(_font, Vector2(tab.position.x, tab.position.y + 8.5), "ENTER: " + _verb(i), HORIZONTAL_ALIGNMENT_CENTER, tab.size.x, 7, Color.BLACK)
+
+
+## The word on the ENTER tab for card `i`.
+func _verb(_i: int) -> String:
+	return sel_verb
 
 
 func _card_at(p: Vector2) -> int:

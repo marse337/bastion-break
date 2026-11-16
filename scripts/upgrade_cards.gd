@@ -11,15 +11,28 @@ const SCENE_W := 80.0
 const SCENE_H := 44.0
 
 var ids: Array = []
+## Index of the START RUN button, selectable after the six upgrades.
+var start_i := 6
+var _desc: Label
 
 
-func show_upgrades() -> void:
+func show_upgrades(desc_text := "") -> void:
 	var fresh := ids.is_empty() or not visible
 	ids = Game.UPGRADE_ORDER.duplicate()
+	start_i = ids.size()
+	selectable = true
+	sel_verb = "BUY"
 	if fresh:
 		_t = 0.0
-		_hover = -1
+		reset_sel()
+		_hover = start_i
 	_clear_labels()
+	# The protocol's description sits left of the START RUN button.
+	var sr := _card_rect(start_i)
+	_desc = _label(Vector2(0, sr.position.y - 1), Vector2(sr.position.x - 8, 26), 7, C_DIM, HORIZONTAL_ALIGNMENT_LEFT)
+	_desc.text = desc_text
+	_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_desc.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	size = Vector2(CARD_W * 2 + GAP_X, CARD_H * 3 + GAP_Y * 2)
 	position.x = (Hud.W - size.x) / 2.0
 	for i in ids.size():
@@ -51,11 +64,39 @@ func show_upgrades() -> void:
 
 
 func _card_count() -> int:
-	return ids.size()
+	return ids.size() + 1
 
 
 func _card_rect(i: int) -> Rect2:
+	if i == start_i:
+		return Rect2(CARD_W * 2 + GAP_X - 100, 3 * (CARD_H + GAP_Y) + 4, 100, 22)
 	return Rect2((i % 2) * (CARD_W + GAP_X), (i / 2) * (CARD_H + GAP_Y), CARD_W, CARD_H)
+
+
+func _verb(i: int) -> String:
+	if i == start_i:
+		return "START"
+	return "OWNED" if Game.upgrade_cost(ids[i]) < 0 else "BUY"
+
+
+## W / S: up or down a row; the bottom row drops onto START RUN.
+func move_row(d: int) -> void:
+	var s := selected()
+	if s == start_i:
+		s = start_i - 1 if d < 0 else start_i
+	elif d > 0:
+		s = s + 2 if s + 2 < start_i else start_i
+	else:
+		s = s - 2 if s >= 2 else s
+	_hover = s
+	queue_redraw()
+
+
+## The description label is not part of any card, so never dim it.
+func _process(delta: float) -> void:
+	super(delta)
+	if _desc != null and is_instance_valid(_desc):
+		_desc.modulate.a = 1.0
 
 
 func _draw() -> void:
@@ -80,6 +121,13 @@ func _draw() -> void:
 			var c := o + Vector2(SCENE_W - 9, 8)
 			draw_circle(c, 5, Color(0.1, 0.35, 0.15))
 			draw_polyline(PackedVector2Array([c + Vector2(-2.5, 0), c + Vector2(-0.5, 2), c + Vector2(2.5, -2)]), C_GOOD, 1.5)
+	# START RUN button.
+	var sr := _card_rect(start_i)
+	var glow := 0.75 + 0.25 * sin(_t * 4.0)
+	draw_rect(sr, Color(0.55, 0.28, 0.05).lerp(Color(0.8, 0.42, 0.08), glow))
+	draw_rect(sr, C_GOLD if selected() == start_i else C_EDGE, false, 2.0 if selected() == start_i else 1.0)
+	draw_string(_font, Vector2(sr.position.x, sr.position.y + 15), "START RUN", HORIZONTAL_ALIGNMENT_CENTER, sr.size.x, 11, Color.WHITE)
+	_sel_marks()
 
 
 func _floor(o: Vector2) -> float:

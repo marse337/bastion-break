@@ -295,16 +295,16 @@ func show_perks(subtitle: String, ids: Array[String], footer: String) -> void:
 
 ## The Cell shop: a one-line header, the six upgrade cards, then the
 ## protocol and key help underneath.
-func show_cell(header: String, footer: String) -> void:
+func show_cell(header: String, desc: String, footer: String) -> void:
 	var keep := upgrade_cards.visible
 	show_screen("CELL 4471", header, true)
 	screen_body.position.y = 38
 	screen_foot.text = footer
-	screen_foot.position.y = 210
-	screen_foot.size.y = 30
+	screen_foot.position.y = 246
+	screen_foot.size.y = 14
 	screen_foot.add_theme_font_size_override("font_size", 8)
 	upgrade_cards.visible = keep
-	upgrade_cards.show_upgrades()
+	upgrade_cards.show_upgrades(desc)
 
 
 func hide_screen() -> void:

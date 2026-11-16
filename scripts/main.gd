@@ -250,18 +250,20 @@ func show_cell() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	var proto: Array = Game.PROTOCOLS[Game.protocol_choice]
 	var header := "Iron Scrip: %d          Protocol: %s" % [Game.scrip, proto[0].to_upper()]
-	var foot: String = proto[1]
+	var desc: String = proto[1]
 	if Game.protocol_choice == "daily":
-		foot += "  Today's best: %d" % Game.daily_best_today()
-	if not TouchControls.active:
-		foot += "\n1-6 or click: buy     P protocol     ENTER start     Esc back"
-	hud.show_cell(header, foot)
+		desc += "  Today's best: %d" % Game.daily_best_today()
+	var foot := "" if TouchControls.active else "A / D / W / S: choose     ENTER: buy or start     1-6: quick buy     P: protocol     Esc: back"
+	hud.show_cell(header, desc, foot)
 	if not hud.upgrade_cards.picked.is_connected(_on_upgrade_card):
 		hud.upgrade_cards.picked.connect(_on_upgrade_card)
 
 
 func _on_upgrade_card(i: int) -> void:
 	if state != "cell":
+		return
+	if i >= Game.UPGRADE_ORDER.size():
+		start_run()
 		return
 	play_sfx("weapon" if Game.buy_upgrade(Game.UPGRADE_ORDER[i]) else "denied")
 	show_cell()
@@ -715,11 +717,20 @@ func _input(event: InputEvent) -> void:
 				Game.save_settings()
 				show_title()
 		"cell":
-			if event.is_action_pressed("confirm"):
-				start_run()
-			elif event.is_action_pressed("pause"):
+			var key: int = event.physical_keycode if event is InputEventKey and event.pressed else 0
+			if key == KEY_KP_ENTER:
+				start_run()  # touch START
+			elif event.is_action_pressed("confirm"):
+				_on_upgrade_card(hud.upgrade_cards.selected())
+			elif _card_step(event) != 0:
+				hud.upgrade_cards.move_sel(_card_step(event))
+				play_sfx("push")
+			elif key in [KEY_W, KEY_UP, KEY_S, KEY_DOWN]:
+				hud.upgrade_cards.move_row(-1 if key in [KEY_W, KEY_UP] else 1)
+				play_sfx("push")
+			elif key == KEY_ESCAPE:
 				show_title()
-			elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_P:
+			elif key == KEY_P and not event.echo:
 				var order := Game.PROTOCOL_ORDER
 				Game.protocol_choice = order[(order.find(Game.protocol_choice) + 1) % order.size()]
 				Game.save_settings()

@@ -247,7 +247,7 @@ func _build_menu() -> void:
 			for n in Game.UPGRADE_ORDER.size():
 				items.append(["BUY %d" % (n + 1), KEY_1 + n])
 			items.append(["MODE", KEY_P])
-			items.append(["START", KEY_ENTER])
+			items.append(["START", KEY_KP_ENTER])
 			items.append(["BACK", KEY_ESCAPE])
 		"perk":
 			for n in main.perk_choices.size():
