@@ -214,7 +214,7 @@ func _play_mode() -> void:
 
 
 func _keyboard_help() -> String:
-	return ("Click the box or press M for every mode     Arrows - change     ENTER - play\n" +
+	return ("Click the box or press M for every mode     W / S or arrows - change     ENTER - play\n" +
 		"Difficulty:  %s   (press 1 / 2 / 3)\n" % Game.DIFFICULTY_NAMES[Game.difficulty] +
 		"WASD / arrows - move & turn     Mouse - turn     Shift - run\n" +
 		"Left click / Ctrl - fire     E / Space / right click - open & use\n" +
@@ -704,10 +704,10 @@ func _input(event: InputEvent) -> void:
 				ms.confirm()
 			elif event.is_action_pressed("pause") and ms.open:
 				ms.close()
-			elif key in [KEY_UP, KEY_W, KEY_LEFT, KEY_A]:
-				ms.step(-1)
-			elif key in [KEY_DOWN, KEY_S, KEY_RIGHT, KEY_D]:
-				ms.step(1)
+			elif key in [KEY_UP, KEY_W, KEY_LEFT, KEY_A, KEY_DOWN, KEY_S, KEY_RIGHT, KEY_D]:
+				if ms.open:
+					play_sfx("push")  # closed, the mode change plays its own sound
+				ms.step(-1 if key in [KEY_UP, KEY_W, KEY_LEFT, KEY_A] else 1)
 			elif key in [KEY_M, KEY_SPACE] and not event.echo:
 				ms.toggle()
 			elif key == KEY_C and not event.echo:
