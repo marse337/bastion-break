@@ -208,6 +208,11 @@ func _set_axis(pos_action: String, neg_action: String, value: float) -> void:
 		Input.action_release(neg_action)
 
 
+## Lets go of every held stick / fire touch (a gamepad took over).
+func release_all() -> void:
+	_release_all()
+
+
 func _release_all() -> void:
 	for a in ["fire", "run", "move_forward", "move_back", "strafe_left", "strafe_right"]:
 		Input.action_release(a)

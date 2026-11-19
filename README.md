@@ -18,6 +18,8 @@ On touch screens:
 - **Map:** tap the map to enlarge it.
 - **Menus:** use the buttons along the bottom of each screen.
 
+Gamepads and joysticks work too, in the browser and locally. As soon as one is plugged in or used, the touch controls hide and every on-screen hint switches to pad buttons. Touching the screen, or pressing a key or mouse button, switches back. In a browser, press any pad button once so the browser reports the pad.
+
 Every push to `main` re-exports the game with standard (non-.NET) Godot 4.7 and publishes it to GitHub Pages (`.github/workflows/deploy-web.yml`). The .NET editor can't export to the web, but the game is pure GDScript, so the standard build works.
 
 ## Run locally
@@ -41,6 +43,19 @@ Godot_v4.7-stable_mono_win64.exe --path .
 | Fullscreen | F11 |
 | Pause | Esc |
 | Purge Protocol: workbench / rocket / mine / brace | C / R / F / B |
+
+| Action | Gamepad |
+|---|---|
+| Move / strafe | Left stick |
+| Turn | Right stick |
+| Run | LT / click the left stick |
+| Fire | RT |
+| Open doors, flip exit switch | A / X |
+| Weapons | LB / RB |
+| Map (large / small) | Back / D-pad up |
+| Pause | START (Back on the pause screen quits to the title) |
+| Purge Protocol: workbench / rocket / mine / brace | Y / D-pad left / down / right |
+| Menus | Stick or D-pad to choose, A to confirm, B to go back. Title: Y opens the mode list, LB / RB change difficulty. Cell: X switches protocol |
 
 ## Modes
 - **Escape run (roguelite, ENTER on the title screen):**
@@ -127,6 +142,7 @@ Godot_v4.7-stable_mono_win64.exe --path .
 | `scripts/game_state.gd` | Autoload `Game`: score, lives, ammo, keys, stats, perks, Iron Scrip and upgrades (saved to `user://meta.cfg`) |
 | `scripts/level_gen.gd` | Procedural floor generator for runs |
 | `scripts/touch_controls.gd` | On-screen stick, buttons and menu buttons for phones |
+| `scripts/gamepad_input.gd` | Gamepad support: menu buttons become key presses, hides the touch controls while a pad is in use |
 
 ## Art pipeline (Blender)
 Every wall, item, weapon and enemy frame is built from primitives by Python
@@ -151,7 +167,10 @@ Pass these after `--`. `--tap=action@seconds,...` presses an input action once a
 `--validate` checks every map for unreachable tiles, bad door frames and an
 unreachable exit.
 
-`--touch` shows the phone controls on desktop.
+`--touch` shows the phone controls on desktop. `--no-pad` ignores any gamepad
+plugged into the machine. `--pad=BUTTON@SEC,AXIS:VALUE@SEC,...` fakes gamepad
+input, e.g. `--pad=y@1,down@1.3` or `--pad=ly:-1@1,rt:1@2,rt:0@2.2` (buttons:
+a b x y start back lb rb up down left right l3; axes: lx ly rx ry lt rt).
 
 Roguelite flags:
 - `--run --seed=N --level=N`: jump straight into a run floor. Debug runs never write to the real save.

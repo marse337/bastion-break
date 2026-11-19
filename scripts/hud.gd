@@ -175,13 +175,16 @@ func tick(delta: float, world: World) -> void:
 		_purge_bar(world)
 	gadget_label.visible = purge and not world.player.dead
 	if gadget_label.visible:
-		var keys := not TouchControls.active
+		var pad := GamepadInput.active
+		var keys := not TouchControls.active or pad
+		var pad_keys := {"rocket": "D<", "mine": "Dv", "brace": "D>"}
 		var parts := ["SCRAP %d" % Game.scrap]
 		for id in Game.GADGET_ORDER:
 			var g: Array = Game.GADGETS[id]
-			parts.append(("%s %s %d" % [g[2], g[0].split(" ")[1].to_upper(), int(Game.gadgets[id])]) if keys else ("%s %d" % [g[0].split(" ")[1].to_upper(), int(Game.gadgets[id])]))
+			var k: String = pad_keys.get(id, "") if pad else g[2]
+			parts.append(("%s %s %d" % [k, g[0].split(" ")[1].to_upper(), int(Game.gadgets[id])]) if keys else ("%s %d" % [g[0].split(" ")[1].to_upper(), int(Game.gadgets[id])]))
 		if keys:
-			parts.append("C craft")
+			parts.append("Y craft" if pad else "C craft")
 		gadget_label.text = "    ".join(parts)
 	dmg_alpha = maxf(0.0, dmg_alpha - delta * 1.8)
 	pick_alpha = maxf(0.0, pick_alpha - delta * 2.5)

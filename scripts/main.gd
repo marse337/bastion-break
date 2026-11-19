@@ -30,6 +30,8 @@ var perk_choices: Array[String] = []
 var _args := PackedStringArray()
 var _keytaps: Array = []
 var touch: TouchControls
+var pad: GamepadInput
+var _padtaps: Array = []
 var _taps: Array = []
 
 
@@ -75,6 +77,9 @@ func _ready() -> void:
 	touch_layer.add_child(touch)
 	if TouchControls.active:
 		_apply_display_mode()
+	pad = GamepadInput.new()
+	pad.main = self
+	add_child(pad)
 
 	god_mode = "--god" in _args
 	if "--retro" in _args:
@@ -105,6 +110,13 @@ func _ready() -> void:
 			for part in a.substr(7).split(","):
 				var bits := part.split("@")
 				_keytaps.append([OS.find_keycode_from_string(bits[0]), float(bits[1])])
+		elif a.begins_with("--pad="):
+			# --pad=BUTTON@sec or AXIS:value@sec: fake gamepad input
+			# (a@1,start@2,ly:-1@3,ly:0@4). Buttons: a b x y start back lb rb
+			# up down left right l3. Axes: lx ly rx ry lt rt.
+			for part in a.substr(6).split(","):
+				var bits := part.split("@")
+				_padtaps.append([bits[0], float(bits[1])])
 		elif a.begins_with("--hold="):
 			for act in a.substr(7).split(","):
 				Input.action_press(act)
@@ -161,6 +173,42 @@ func _setup_input() -> void:
 	_bind("gadget_rocket", [KEY_R])
 	_bind("gadget_mine", [KEY_F])
 	_bind("gadget_brace", [KEY_B])
+	# Gamepad: sticks move and turn, triggers fire and run. Menu buttons are
+	# handled by GamepadInput, which sends the matching keys.
+	_pad_axis("move_forward", JOY_AXIS_LEFT_Y, -1.0)
+	_pad_axis("move_back", JOY_AXIS_LEFT_Y, 1.0)
+	_pad_axis("strafe_left", JOY_AXIS_LEFT_X, -1.0)
+	_pad_axis("strafe_right", JOY_AXIS_LEFT_X, 1.0)
+	_pad_axis("turn_left", JOY_AXIS_RIGHT_X, -1.0)
+	_pad_axis("turn_right", JOY_AXIS_RIGHT_X, 1.0)
+	_pad_axis("fire", JOY_AXIS_TRIGGER_RIGHT, 1.0)
+	_pad_axis("run", JOY_AXIS_TRIGGER_LEFT, 1.0)
+	_pad_button("run", JOY_BUTTON_LEFT_STICK)
+	_pad_button("use", JOY_BUTTON_A)
+	_pad_button("use", JOY_BUTTON_X)
+	_pad_button("craft", JOY_BUTTON_Y)
+	_pad_button("gadget_rocket", JOY_BUTTON_DPAD_LEFT)
+	_pad_button("gadget_mine", JOY_BUTTON_DPAD_DOWN)
+	_pad_button("gadget_brace", JOY_BUTTON_DPAD_RIGHT)
+	for a in ["move_forward", "move_back", "strafe_left", "strafe_right"]:
+		InputMap.action_set_deadzone(a, 0.2)
+	for a in ["turn_left", "turn_right"]:
+		InputMap.action_set_deadzone(a, 0.15)
+
+
+func _pad_axis(action: String, axis: int, dir: float) -> void:
+	var ev := InputEventJoypadMotion.new()
+	ev.device = -1
+	ev.axis = axis
+	ev.axis_value = dir
+	InputMap.action_add_event(action, ev)
+
+
+func _pad_button(action: String, button: int) -> void:
+	var ev := InputEventJoypadButton.new()
+	ev.device = -1
+	ev.button_index = button
+	InputMap.action_add_event(action, ev)
 
 
 func _bind(action: String, keys: Array, buttons: Array = []) -> void:
@@ -169,6 +217,7 @@ func _bind(action: String, keys: Array, buttons: Array = []) -> void:
 	for k in keys:
 		var ev := InputEventKey.new()
 		ev.physical_keycode = k
+		ev.device = -1  # any device, including GamepadInput's faked keys
 		InputMap.action_add_event(action, ev)
 	for b in buttons:
 		var mb := InputEventMouseButton.new()
@@ -186,7 +235,7 @@ func show_title() -> void:
 		"You are Rook, prisoner 4471 of the Iron Directorate.\n" +
 		"Break out of the Bastion, one floor at a time.",
 		"classic" if Game.classic_choice else Game.protocol_choice,
-		_touch_help() if TouchControls.active else _keyboard_help())
+		_foot(_keyboard_help(), _pad_help(), _touch_help()))
 	if not hud.mode_select.play_pressed.is_connected(_play_mode):
 		hud.mode_select.play_pressed.connect(_play_mode)
 		hud.mode_select.changed.connect(_on_mode_changed)
@@ -229,13 +278,46 @@ func _touch_help() -> String:
 		"Tap the map to enlarge it")
 
 
-## Called the first time a touch arrives on a device that wasn't detected
-## as touch-driven, so the screens switch to touch help.
-func on_touch_activated() -> void:
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+func _pad_help() -> String:
+	return ("Stick / D-pad - change mode     Y - every mode     A - play\n" +
+		"Difficulty:  %s   (LB / RB)\n" % Game.DIFFICULTY_NAMES[Game.difficulty] +
+		"Left stick - move     Right stick - turn     LT / L3 - run\n" +
+		"RT - fire     A / X - open & use     LB / RB - weapons\n" +
+		"Back / D-pad up - map     START - pause\n" +
+		"Purge: Y - workbench     D-pad left / down / right - rocket / mine / brace")
+
+
+## Pick the hint for whatever the player is using: keyboard, gamepad or touch.
+func _foot(keys: String, pad_text: String, touch_text := "") -> String:
+	if GamepadInput.active:
+		return pad_text
+	return touch_text if TouchControls.active else keys
+
+
+## A gamepad was plugged in / used, or unplugged: redraw the current screen
+## so its hints match, and hide or show the touch controls.
+func on_input_mode_changed() -> void:
 	_apply_display_mode()
-	if state == "title":
-		show_title()
+	match state:
+		"title":
+			show_title()
+		"cell":
+			show_cell()
+		"perk":
+			hud.screen_foot.text = _perk_foot()
+		"craft":
+			hud.screen_foot.text = _craft_foot()
+		"briefing":
+			hud.screen_foot.text = _briefing_foot()
+
+
+## Called the first time a touch arrives on a device that wasn't detected
+## as touch-driven (or after a gamepad was in use), so the screens switch to
+## touch help.
+func on_touch_activated() -> void:
+	GamepadInput.deactivate()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	on_input_mode_changed()
 
 
 func _capture_mouse() -> void:
@@ -253,7 +335,8 @@ func show_cell() -> void:
 	var desc: String = proto[1]
 	if Game.protocol_choice == "daily":
 		desc += "  Today's best: %d" % Game.daily_best_today()
-	var foot := "" if TouchControls.active else "A / D / W / S: choose     ENTER: buy or start     1-6: quick buy     P: protocol     Esc: back"
+	var foot := _foot("A / D / W / S: choose     ENTER: buy or start     1-6: quick buy     P: protocol     Esc: back",
+		"Stick / D-pad: choose     A: buy or start     X: protocol     B: back")
 	hud.show_cell(header, desc, foot)
 	if not hud.upgrade_cards.picked.is_connected(_on_upgrade_card):
 		hud.upgrade_cards.picked.connect(_on_upgrade_card)
@@ -277,10 +360,14 @@ func _show_perk_choice() -> void:
 		_next_level()
 		return
 	var sub := "Your clean work earned a contraband perk (%d left to pick)." % pending_perks
-	var foot := "" if TouchControls.active else "A / D or arrows: choose     ENTER: take it     1 - %d: quick pick     or click a card" % perk_choices.size()
-	hud.show_perks(sub, perk_choices, foot)
+	hud.show_perks(sub, perk_choices, _perk_foot())
 	if not hud.perk_cards.picked.is_connected(_on_perk_card):
 		hud.perk_cards.picked.connect(_on_perk_card)
+
+
+func _perk_foot() -> String:
+	return _foot("A / D or arrows: choose     ENTER: take it     1 - %d: quick pick     or click a card" % perk_choices.size(),
+		"Stick / D-pad: choose     A: take it")
 
 
 func _on_perk_card(i: int) -> void:
@@ -312,8 +399,15 @@ func _pick_perk(i: int) -> void:
 		_next_level()
 
 
+## "Press ENTER" / "Press A" / "Tap CONTINUE" for the end-of-run screens.
+func _press() -> String:
+	return _foot("Press ENTER", "Press A", "Tap CONTINUE")
+
+
 func _pause_text() -> String:
 	var t := "Esc - resume\nQ - quit to title\n\nF2 - toggle HD / retro pixels\nF11 - fullscreen\nTab - large map"
+	if GamepadInput.active:
+		t = "START / B - resume\nBack - quit to title"
 	if Game.is_run():
 		t += "\n\nProtocol: " + Game.PROTOCOLS[Game.protocol][0]
 		if Game.is_protocol("daily"):
@@ -457,12 +551,12 @@ func _after_death() -> void:
 		state = "runover"
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		hud.show_screen("RUN OVER",
-			"%s: Rook fell on floor %d.\n\nScore: %d%s\nIron Scrip earned this run: %d   (banked: %d)\n\nPress ENTER to return to the Cell" %
-			[Game.PROTOCOLS[Game.protocol][0], Game.level_index + 1, Game.score, _daily_line(), Game.run_scrip, Game.scrip])
+			"%s: Rook fell on floor %d.\n\nScore: %d%s\nIron Scrip earned this run: %d   (banked: %d)\n\n%s to return to the Cell" %
+			[Game.PROTOCOLS[Game.protocol][0], Game.level_index + 1, Game.score, _daily_line(), Game.run_scrip, Game.scrip, _press()])
 	else:
 		state = "gameover"
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		hud.show_screen("GAME OVER", "The Directorate keeps its prisoners.\n\nFinal score: %d\n\nPress ENTER" % Game.score)
+		hud.show_screen("GAME OVER", "The Directorate keeps its prisoners.\n\nFinal score: %d\n\n%s" % [Game.score, _press()])
 
 
 func on_level_exit() -> void:
@@ -533,11 +627,11 @@ func _next_level() -> void:
 		Game.save_meta()
 		var how := "Every hostage is free and Rook slips out unseen." if Game.is_protocol("ghost") else "The Overseer has fallen and Rook walks free."
 		hud.show_screen("ESCAPED!",
-			"%s\n\nScore: %d%s\nIron Scrip earned this run: %d   (banked: %d)\n\nPress ENTER to return to the Cell" %
-			[how, Game.score, _daily_line(), Game.run_scrip, Game.scrip])
+			"%s\n\nScore: %d%s\nIron Scrip earned this run: %d   (banked: %d)\n\n%s to return to the Cell" %
+			[how, Game.score, _daily_line(), Game.run_scrip, Game.scrip, _press()])
 	else:
 		hud.show_screen("YOU BROKE OUT!",
-			"The Overseer has fallen and Rook walks free.\n\nFinal score: %d\n\nPress ENTER" % Game.score)
+			"The Overseer has fallen and Rook walks free.\n\nFinal score: %d\n\n%s" % [Game.score, _press()])
 
 
 func _validate_levels() -> void:
@@ -598,6 +692,11 @@ func _process(delta: float) -> void:
 				e.physical_keycode = kt[0]
 				e.pressed = down
 				Input.parse_input_event(e)
+	for pt in _padtaps.duplicate():
+		pt[1] -= delta
+		if pt[1] <= 0.0:
+			_padtaps.erase(pt)
+			_fake_pad(pt[0])
 	match state:
 		"playing":
 			if Game.is_protocol("purge") and Input.is_action_just_pressed("craft"):
@@ -625,6 +724,28 @@ func _process(delta: float) -> void:
 			print("Saved screenshot to ", shot_path)
 			if "--quit" in _args:
 				get_tree().quit()
+
+
+## Debug: one fake gamepad event from a --pad token.
+func _fake_pad(tok: String) -> void:
+	const BUTTONS := {"a": JOY_BUTTON_A, "b": JOY_BUTTON_B, "x": JOY_BUTTON_X, "y": JOY_BUTTON_Y,
+		"start": JOY_BUTTON_START, "back": JOY_BUTTON_BACK, "lb": JOY_BUTTON_LEFT_SHOULDER,
+		"rb": JOY_BUTTON_RIGHT_SHOULDER, "up": JOY_BUTTON_DPAD_UP, "down": JOY_BUTTON_DPAD_DOWN,
+		"left": JOY_BUTTON_DPAD_LEFT, "right": JOY_BUTTON_DPAD_RIGHT, "l3": JOY_BUTTON_LEFT_STICK}
+	const AXES := {"lx": JOY_AXIS_LEFT_X, "ly": JOY_AXIS_LEFT_Y, "rx": JOY_AXIS_RIGHT_X,
+		"ry": JOY_AXIS_RIGHT_Y, "lt": JOY_AXIS_TRIGGER_LEFT, "rt": JOY_AXIS_TRIGGER_RIGHT}
+	if ":" in tok:
+		var m := InputEventJoypadMotion.new()
+		m.axis = AXES[tok.get_slice(":", 0)]
+		m.axis_value = float(tok.get_slice(":", 1))
+		Input.parse_input_event(m)
+	else:
+		for down in [true, false]:
+			var e := InputEventJoypadButton.new()
+			e.button_index = BUTTONS[tok]
+			e.pressed = down
+			e.pressure = 1.0 if down else 0.0
+			Input.parse_input_event(e)
 
 
 ## Sizes the 3D viewport for HD (native pixels) or retro (480x230) mode.
@@ -811,7 +932,11 @@ func _show_briefing() -> void:
 	hud.show_briefing(
 		"%d seconds into every floor the HUNTER WARDEN leaves the elevator. It can't be killed:\n" % int(Game.PURGE_DELAY) +
 		"stun it with 30 damage, outrun it, or rocket it from the green wall pods. Or craft gadgets:",
-		"Tap START" if TouchControls.active else "ENTER or SPACE - start the floor")
+		_briefing_foot())
+
+
+func _briefing_foot() -> String:
+	return _foot("ENTER or SPACE - start the floor", "A - start the floor", "Tap START")
 
 
 func _end_briefing() -> void:
@@ -831,8 +956,12 @@ func _open_craft() -> void:
 
 
 func _show_craft() -> void:
-	var foot := "" if TouchControls.active else "A / D: choose     ENTER or 1-3: craft     C / Esc: back to the hunt"
-	hud.show_craft("Scrap: %d      (guards drop scrap when they die)" % Game.scrap, foot)
+	hud.show_craft("Scrap: %d      (guards drop scrap when they die)" % Game.scrap, _craft_foot())
+
+
+func _craft_foot() -> String:
+	return _foot("A / D: choose     ENTER or 1-3: craft     C / Esc: back to the hunt",
+		"Stick / D-pad: choose     A: craft     B / Y: back to the hunt")
 
 
 func _craft(i: int) -> void:

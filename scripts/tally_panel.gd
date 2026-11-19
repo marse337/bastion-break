@@ -221,6 +221,6 @@ func _draw() -> void:
 	# Prompt.
 	var blink := 0.6 + 0.4 * sin(_t * 5.0)
 	if done():
-		_text("ENTER or SPACE - continue", Vector2(0, 222), 10, Color(C_TEXT, blink), HORIZONTAL_ALIGNMENT_CENTER, Hud.W)
+		_text("A - continue" if GamepadInput.active else "ENTER or SPACE - continue", Vector2(0, 222), 10, Color(C_TEXT, blink), HORIZONTAL_ALIGNMENT_CENTER, Hud.W)
 	else:
-		_text("SPACE - skip", Vector2(0, 222), 8, Color(C_DIM, 0.8), HORIZONTAL_ALIGNMENT_CENTER, Hud.W)
+		_text("A - skip" if GamepadInput.active else "SPACE - skip", Vector2(0, 222), 8, Color(C_DIM, 0.8), HORIZONTAL_ALIGNMENT_CENTER, Hud.W)
