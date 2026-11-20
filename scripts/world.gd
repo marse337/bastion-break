@@ -68,6 +68,7 @@ var boss: Enemy = null
 var projectiles: Array[Dictionary] = []
 var effects: Array[Dictionary] = []
 var brace_debris: Array[Dictionary] = []
+var _gfx: GadgetFx
 var exited := false
 var crimson: Enemy = null
 # Security terminal puzzle
@@ -658,10 +659,11 @@ func tick(delta: float) -> void:
 	if Game.is_protocol("purge"):
 		_tick_purge(delta)
 	_tick_rockets(delta)
-	_tick_mines()
+	_tick_mines(delta)
 	_tick_projectiles(delta)
 	_tick_effects(delta)
 	_tick_brace_debris(delta)
+	gfx().tick(delta)
 	if not player.dead:
 		_check_pickups()
 
@@ -1856,8 +1858,32 @@ func fire_rocket() -> void:
 
 
 func _launch_rocket(from: Vector2, dir: Vector2, homing: bool) -> void:
-	rockets.append({"pos": from, "dir": dir, "homing": homing, "t": 0.0, "node": _make_sprite("rocket", from)})
+	rockets.append({"pos": from, "dir": dir, "homing": homing, "t": 0.0, "trail_t": 0.0, "node": _make_sprite("rocket", from)})
 	play_sfx("rocket", from)
+	# Launch: a muzzle flash out in front, and back-blast smoke - unless that
+	# would be in Rook's face (a hand-fired rocket).
+	var fwd := Vector3(dir.x, 0, dir.y)
+	var p3 := Vector3(from.x, 0.42, from.y)
+	gfx().flash(p3 + fwd * 0.3, 0.35, Color(1.0, 0.75, 0.35), 0.12)
+	if from.distance_to(player.pos) > 1.0:
+		for i in 4:
+			gfx().puff(p3 - fwd * 0.15, 0.15, 0.55, Color(0.75, 0.72, 0.7, 0.55), randf_range(0.5, 0.8),
+				-fwd * randf_range(0.6, 1.4) + Vector3(randf_range(-0.3, 0.3), randf_range(0.0, 0.4), randf_range(-0.3, 0.3)), false, "smoke")
+	_shake_at(from, 0.25)
+
+
+## The shared effects layer for gadgets (smoke, flashes, debris, arcs).
+func gfx() -> GadgetFx:
+	if _gfx == null:
+		_gfx = GadgetFx.new()
+		add_child(_gfx)
+	return _gfx
+
+
+## Shake the camera, more the closer `at` is to Rook.
+func _shake_at(at: Vector2, amount: float) -> void:
+	var d := at.distance_to(player.pos)
+	player.shake = maxf(player.shake, amount * clampf(1.0 - d / 8.0, 0.0, 1.0))
 
 
 func _tick_rockets(delta: float) -> void:
@@ -1877,11 +1903,39 @@ func _tick_rockets(delta: float) -> void:
 		else:
 			r.pos = np
 			r.node.position = Vector3(np.x, 0.5, np.y)
+			_rocket_trail(r, delta)
+
+
+## A glowing exhaust and a smoke trail that hangs in the air behind the rocket.
+func _rocket_trail(r: Dictionary, delta: float) -> void:
+	r.trail_t -= delta
+	if r.trail_t > 0.0:
+		return
+	r.trail_t = 0.025
+	var tail := Vector3(r.pos.x - r.dir.x * 0.18, 0.5, r.pos.y - r.dir.y * 0.18)
+	if Vector2(tail.x, tail.z).distance_to(player.pos) < 0.8:
+		return   # too close to the camera - it would fog the whole screen
+	gfx().puff(tail, 0.16, 0.08, Color(1.0, 0.6, 0.2), 0.12, Vector3.ZERO, true, "exhaust")
+	gfx().puff(tail, 0.12, randf_range(0.35, 0.5), Color(0.7, 0.68, 0.66, 0.45), randf_range(0.6, 0.9),
+		Vector3(randf_range(-0.1, 0.1), randf_range(0.05, 0.2), randf_range(-0.1, 0.1)), false, "trail")
 
 
 func _rocket_blast(at: Vector2) -> void:
 	for i in 2:
 		_explode(at + Vector2(randf_range(-0.2, 0.2), randf_range(-0.2, 0.2)), false)
+	# Fireball, shockwave, flying metal and a column of smoke.
+	var p3 := Vector3(at.x, 0.45, at.y)
+	gfx().flash(p3, 2.4, Color(1.0, 0.85, 0.5), 0.2)
+	for i in 6:
+		var o := Vector3(randf_range(-0.3, 0.3), randf_range(-0.15, 0.3), randf_range(-0.3, 0.3))
+		gfx().puff(p3 + o, 0.3, randf_range(0.8, 1.2), Color(1.0, randf_range(0.4, 0.65), 0.15), randf_range(0.35, 0.5), o * 1.5, true, "fireball")
+	for i in 8:
+		var o := Vector3(randf_range(-0.4, 0.4), randf_range(0.0, 0.3), randf_range(-0.4, 0.4))
+		gfx().puff(p3 + o, 0.3, randf_range(0.9, 1.4), Color(0.22, 0.2, 0.2, 0.7), randf_range(1.3, 2.0),
+			Vector3(o.x * 0.6, randf_range(0.3, 0.6), o.z * 0.6), false, "smoke")
+	gfx().ring(p3, 0.2, 2.2, Color(1.0, 0.6, 0.25, 0.9), 0.35)
+	gfx().debris(p3, 10)
+	_shake_at(at, 1.0)
 	for e in enemies.duplicate():
 		if e.is_alive() and e.pos.distance_to(at) < 1.6:
 			if e == hunter:
@@ -1897,34 +1951,90 @@ func drop_mine() -> bool:
 			return false
 	var p := Vector2(t.x + 0.5, t.y + 0.5)
 	var node := _make_sprite("mine", p)
-	node.position.y = 0.12
+	node.position.y = MINE_DROP_Y   # it falls from Rook's hand
 	node.pixel_size *= 0.5
-	mines.append({"tile": t, "node": node})
+	# A red arming light that blinks on top of it once it lands.
+	var light := gfx()._quad(Vector3(p.x, MINE_Y + 0.08, p.y), GadgetFx._disc_tex(), 0.13, Color(1.0, 0.15, 0.1), INF, 0.13, true, true, "mine_light")
+	light.node.visible = false
+	mines.append({"tile": t, "node": node, "light": light, "t": 0.0, "vy": 0.0, "landed": false, "blink": 0.0})
 	play_sfx("mine")
 	return true
 
 
 func _remove_mine(m: Dictionary) -> void:
 	m.node.queue_free()
+	_free_mine_light(m)
 	mines.erase(m)
 	play_sfx("stun", Vector2(m.tile.x + 0.5, m.tile.y + 0.5))
+	# Shock burst: a blue-white flash, a ring racing across the floor and
+	# sparks spraying out.
+	var c := Vector3(m.tile.x + 0.5, 0.15, m.tile.y + 0.5)
+	gfx().flash(c + Vector3(0, 0.15, 0), 1.4, Color(0.55, 0.8, 1.0), 0.18)
+	gfx().ring(c, 0.1, 1.6, Color(0.5, 0.85, 1.0), 0.4)
+	for i in 10:
+		var ang := randf() * TAU
+		gfx().puff(c, 0.07, 0.03, Color(0.8, 0.95, 1.0), randf_range(0.3, 0.5),
+			Vector3(cos(ang) * randf_range(1.0, 2.5), randf_range(1.0, 2.5), sin(ang) * randf_range(1.0, 2.5)), true, "spark", GadgetFx.GRAVITY)
+	_shake_at(Vector2(c.x, c.z), 0.35)
 
+
+func _free_mine_light(m: Dictionary) -> void:
+	var light: Dictionary = m.light
+	if is_instance_valid(light.node):
+		light.life = 0.001   # GadgetFx frees it next tick
+		light.t = 1.0
+
+
+## Mine drop and arming light: it falls, bounces once, then blinks red -
+## faster when the Hunter is close.
+func _animate_mine(m: Dictionary, delta: float) -> void:
+	m.t += delta
+	var node: Sprite3D = m.node
+	if not m.landed:
+		m.vy -= 9.0 * delta
+		node.position.y += m.vy * delta
+		if node.position.y <= MINE_Y:
+			node.position.y = MINE_Y
+			if m.vy < -1.5:
+				m.vy = -m.vy * 0.3
+			else:
+				m.landed = true
+				play_sfx("clank", Vector2(m.tile.x + 0.5, m.tile.y + 0.5))
+		return
+	var near := hunter != null and hunter.is_alive() and hunter.pos.distance_to(Vector2(m.tile) + Vector2(0.5, 0.5)) < 4.0
+	var period := 0.3 if near else 1.0
+	m.blink += delta
+	if m.blink >= period:
+		m.blink = 0.0
+		gfx().ring(Vector3(m.tile.x + 0.5, 0, m.tile.y + 0.5), 0.05, 0.45, Color(1.0, 0.2, 0.15, 0.6), 0.5)
+	m.light.node.visible = m.blink < 0.12
+
+
+const MINE_Y := 0.12
+const MINE_DROP_Y := 0.42
 
 ## Shock Mines: the Hunter is stunned for 6 s, guards take 40 damage.
-func _tick_mines() -> void:
+func _tick_mines(delta: float) -> void:
 	for m in mines.duplicate():
+		_animate_mine(m, delta)
 		# The Hunter sets a mine off as soon as it comes within reach of it.
 		if hunter != null and hunter.is_alive() and not hunter.is_stunned():
 			if hunter.pos.distance_to(Vector2(m.tile.x + 0.5, m.tile.y + 0.5)) < 0.95:
 				_remove_mine(m)
 				_spark(hunter.pos)
 				hunter.stun(6.0)
+				# Arcs crackle over the Hunter for as long as it is stunned.
+				var hw: WeakRef = weakref(hunter)   # the Hunter may be freed mid-stun (next floor)
+				gfx().arcs(func(): return Vector3(hw.get_ref().pos.x, 0.55, hw.get_ref().pos.y), 6.0,
+					func(): return hw.get_ref() != null and hw.get_ref().is_stunned())
 				continue
 		for e in enemies:
 			if e != hunter and e.is_alive() and e.tile == m.tile:
 				_remove_mine(m)
 				_spark(e.pos)
 				e.take_damage(40, true)
+				var ew: WeakRef = weakref(e)
+				gfx().arcs(func(): return Vector3(ew.get_ref().pos.x, 0.5, ew.get_ref().pos.y), 0.7, func(): return ew.get_ref() != null)
 				break
 
 

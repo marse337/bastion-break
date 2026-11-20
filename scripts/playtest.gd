@@ -18,14 +18,21 @@ extends Node
 ##   * fired down an empty corridor it flies and explodes at the far end;
 ##   * it hits a guard for exactly 60 damage;
 ##   * it scraps the Hunter for the floor: +5000 (x1.5 in Purge), +3 scrap,
-##     an ammo drop, and the Hunter stays gone.
+##     an ammo drop, and the Hunter stays gone;
+##   * effects: a launch flash, a smoke trail all the way, then a fireball,
+##     a shockwave ring, 10 debris chunks that come to rest on the floor, a
+##     camera shake - and every effect cleans itself up.
 ##
 ## mine: Shock Mine gadget -
 ##   * dropped under Rook it arms on that tile (a second there is refused);
 ##   * a guard stepping on it takes exactly 40 damage and the mine is used up;
 ##   * the Hunter sets it off and is stunned for 6 s;
 ##   * a stunned Hunter can't set off a second mine - it goes off as soon
-##     as the Hunter walks on.
+##     as the Hunter walks on;
+##   * effects: the mine drops and lands, its red light blinks, a burst
+##     (flash, ring, sparks) when it goes off, arcs crackle over a guard
+##     briefly and over the Hunter for the whole stun, and nothing is left
+##     behind afterwards.
 ##
 ## all: every suite above, one after another on the same floor.
 
@@ -359,17 +366,42 @@ func _rocket_tests() -> void:
 	_stand(w, a, ahead)
 	await _frames(2)
 	var fx_before: int = w.effects.size()
+	var gfx: GadgetFx = w.gfx()
+	var n0: Dictionary = gfx.spawned.duplicate()
 	_check("rocket: fired", w.use_gadget("rocket") and w.rockets.size() == 1)
+	_check("rocket fx: launch flash", _grew(gfx, n0, "flash") >= 1)
 	_check("rocket: one spent", int(Game.gadgets["rocket"]) == 2, "have %d" % Game.gadgets["rocket"])
 	await _wait(0.1)
 	var flew: bool = not w.rockets.is_empty() and w.rockets[0].pos.distance_to(w.player.pos) > 0.6
 	_check("rocket: flies down the corridor", flew)
 	await _shot("rocket_1_in_flight")
 	var t0: float = Game.level_time
+	var last_pos := Vector2.ZERO
+	var max_shake := 0.0
 	while not w.rockets.is_empty() and Game.level_time - t0 < 5.0:
+		last_pos = w.rockets[0].pos
 		await get_tree().process_frame
+	for i in 3:
+		max_shake = maxf(max_shake, w.player.shake)
+		await get_tree().process_frame
+	# Blast shake fades with distance: full at Rook's feet, none 8 tiles away.
+	var want_shake := clampf(1.0 - last_pos.distance_to(w.player.pos) / 8.0, 0.0, 1.0)
 	_check("rocket: explodes at the end of its flight", w.rockets.is_empty() and w.effects.size() > fx_before)
+	_check("rocket fx: smoke trail all the way", _grew(gfx, n0, "trail") >= 4, "%d puffs" % _grew(gfx, n0, "trail"))
+	_check("rocket fx: fireball and shockwave ring", _grew(gfx, n0, "fireball") >= 6 and _grew(gfx, n0, "ring") >= 1)
+	_check("rocket fx: 10 debris chunks", _grew(gfx, n0, "debris") == 10, "%d" % _grew(gfx, n0, "debris"))
+	_check("rocket fx: camera shakes, less the further away", max_shake >= want_shake - 0.1 and max_shake <= want_shake + 0.01,
+		"shake %.2f, want about %.2f for a blast %.1f tiles away" % [max_shake, want_shake, last_pos.distance_to(w.player.pos)])
 	await _shot("rocket_2_wall_blast")
+	await _wait(1.6)
+	var resting := 0
+	for part in gfx._parts:
+		if part.kind == "debris" and part.get("rest", false) and part.node.position.y < 0.05:
+			resting += 1
+	_check("rocket fx: debris comes to rest on the floor", resting == gfx.active("debris") and resting > 0, "%d of %d resting" % [resting, gfx.active("debris")])
+	await _shot("rocket_2b_debris")
+	await _wait(2.0)
+	_check("rocket fx: everything cleans itself up", gfx.active() == 0, "%d left" % gfx.active())
 
 	# --- 3. A guard in the way takes exactly 60.
 	var g := _guard(w)
@@ -423,25 +455,49 @@ func _mine_tests() -> void:
 	var a: Vector2i = line[0]
 	var dir: Vector2i = line[1]
 	var far := Vector2(a + dir * 5) + Vector2(0.5, 0.5)
+	var shot_light := false
 	Game.gadgets["mine"] = 4
 
 	# --- 1. Drop one under Rook; a second on the same tile is refused.
 	_stand(w, a + dir * 2, far)
 	await _frames(2)
 	_check("mine: dropped under Rook", w.use_gadget("mine") and w.mines.size() == 1 and w.mines[0].tile == a + dir * 2)
+	var gfx: GadgetFx = w.gfx()
+	var m0: Dictionary = w.mines[0]
+	_check("mine fx: falls from Rook's hand", m0.node.position.y > 0.3, "y %.2f" % m0.node.position.y)
 	_check("mine: one spent", int(Game.gadgets["mine"]) == 3, "have %d" % Game.gadgets["mine"])
 	_check("mine: second on the same tile refused", not w.use_gadget("mine") and w.mines.size() == 1 and int(Game.gadgets["mine"]) == 3)
 	_stand(w, a, Vector2(a + dir * 2) + Vector2(0.5, 0.5))
-	await _shot("mine_1_armed")
+	await _wait(0.8)
+	_check("mine fx: lands on the floor", m0.landed and absf(m0.node.position.y - w.MINE_Y) < 0.01, "y %.2f" % m0.node.position.y)
+	var seen_on := false
+	var seen_off := false
+	var t1: float = Game.level_time
+	while Game.level_time - t1 < 1.5:
+		await get_tree().process_frame
+		if m0.light.node.visible:
+			seen_on = true
+			if not shot_light:
+				shot_light = true
+				await _shot("mine_1_armed")
+		else:
+			seen_off = true
+	_check("mine fx: red light blinks", seen_on and seen_off)
 
 	# --- 2. A guard walks onto it: exactly 40 damage, mine used up.
 	var g := _guard(w)
 	_check("mine: found a guard to test on", g != null)
 	if g != null:
+		var n0: Dictionary = gfx.spawned.duplicate()
 		_place_guard(w, g, a + dir * 2)
 		await _wait(0.1)
 		_check("mine: guard takes 40 damage", g.hp == 999 - 40, "hp %d" % g.hp)
 		_check("mine: used up by the guard", w.mines.is_empty())
+		_check("mine fx: burst - flash, ring and sparks", _grew(gfx, n0, "flash") >= 1 and _grew(gfx, n0, "ring") >= 1 and _grew(gfx, n0, "spark") >= 10)
+		_check("mine fx: arcs crackle over the guard", _grew(gfx, n0, "arc") > 0)
+		await _shot("mine_1b_guard_shocked")
+		await _wait(1.0)
+		_check("mine fx: guard's arcs stop after a moment", gfx.arcs_running() == 0)
 		g.take_damage(9999, true)
 		await _wait(0.6)
 
@@ -461,6 +517,8 @@ func _mine_tests() -> void:
 	var was := false
 	var shot_stun := false
 	var mines_during := -1
+	var arcs_late := -1   # arcs spawned in the last second of the first stun
+	var arcs_mark := -1
 	var t0: float = Game.level_time
 	while Game.level_time - t0 < 20.0 and stuns.size() < 2:
 		await get_tree().process_frame
@@ -472,6 +530,10 @@ func _mine_tests() -> void:
 			unstun = el
 		if now and stuns.size() == 1 and el > stuns[0] + 3.0 and mines_during < 0:
 			mines_during = w.mines.size()
+		if now and stuns.size() == 1 and el > stuns[0] + 4.9 and arcs_mark < 0:
+			arcs_mark = int(gfx.spawned.get("arc", 0))
+		if now and stuns.size() == 1 and el > stuns[0] + 5.8 and arcs_late < 0 and arcs_mark >= 0:
+			arcs_late = int(gfx.spawned.get("arc", 0)) - arcs_mark
 		if now and not shot_stun and stuns.size() == 1 and el > stuns[0] + 0.3:
 			shot_stun = true
 			await _shot("mine_2_hunter_stunned")
@@ -481,4 +543,16 @@ func _mine_tests() -> void:
 	_check("mine: second mine waits while the Hunter is stunned", mines_during == 1, "mines left mid-stun %d" % mines_during)
 	_check("mine: second mine stuns it again once it walks on", stuns.size() == 2 and stuns[1] > unstun and stuns[1] - unstun < 2.0, "stuns %s, free at %.2f" % [str(stuns), unstun])
 	_check("mine: both mines used up", w.mines.is_empty())
+	_check("mine fx: arcs crackle over the Hunter for the whole stun", arcs_late > 10, "%d arcs in its last second" % arcs_late)
+	await _wait(0.5)
+	await _shot("mine_3_second_stun")
 	_reset_hunter(w)
+	await _wait(1.0)
+	_check("mine fx: arcs stop when the stun ends", gfx.arcs_running() == 0, "%d running" % gfx.arcs_running())
+	await _wait(1.0)
+	_check("mine fx: nothing left behind (lights, rings, sparks)", gfx.active() == 0, "%d left" % gfx.active())
+
+
+## How many more effects of `kind` exist now than in the `before` snapshot.
+func _grew(gfx: GadgetFx, before: Dictionary, kind: String) -> int:
+	return int(gfx.spawned.get(kind, 0)) - int(before.get(kind, 0))

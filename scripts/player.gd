@@ -21,6 +21,8 @@ var running := false
 var dead := false
 var mouse_sens := 0.006
 var invulnerable := 0.0
+## Camera shake from nearby blasts, 0-1; fades on its own.
+var shake := 0.0
 var since_shot := 99.0
 var anim_len := 0.15
 ## Locked in place (the calibration range): can turn and shoot, not walk.
@@ -60,6 +62,7 @@ func tick(delta: float) -> void:
 	fire_anim -= delta
 	since_shot += delta
 	invulnerable = maxf(0.0, invulnerable - delta)
+	shake = maxf(0.0, shake - delta * 2.5)
 	if dead:
 		cam.position.y = lerpf(cam.position.y, 0.1, delta * 3.0)
 		cam.rotation.z = lerpf(cam.rotation.z, 0.5, delta * 2.0)
@@ -184,3 +187,11 @@ func _sync() -> void:
 	position = Vector3(pos.x, 0, pos.y)
 	cam.position.y = 0.5 + (sin(bob) * 0.018 if moving else 0.0)
 	cam.rotation.y = -angle - PI / 2.0
+	# Blast shake: a quick jitter that dies away.
+	if shake > 0.0:
+		cam.position.x = randf_range(-1.0, 1.0) * shake * 0.03
+		cam.position.y += randf_range(-1.0, 1.0) * shake * 0.03
+		cam.rotation.z = randf_range(-1.0, 1.0) * shake * 0.015
+	elif not dead:
+		cam.position.x = 0.0
+		cam.rotation.z = 0.0

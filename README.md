@@ -171,7 +171,7 @@ never touch the save.
 Godot_v4.7-stable_mono_win64_console.exe --path . -- --run --protocol=purge --seed=1 --no-save --no-pad --playtest=all --playtest-shots=shots
 ```
 
-`--playtest=` takes `brace`, `rocket`, `mine` or `all` (46 checks). All of them live in `scripts/playtest.gd`:
+`--playtest=` takes `brace`, `rocket`, `mine` or `all` (62 checks). A run only passed if it prints `PLAYTEST DONE ... 0 failed`: if the game fails to compile, Godot still exits with code 0. All of them live in `scripts/playtest.gd`:
 
 - `brace` (20 checks):
   - bracing with no door in front is refused and costs nothing;
@@ -179,16 +179,18 @@ Godot_v4.7-stable_mono_win64_console.exe --path . -- --run --protocol=purge --se
   - a second brace fits, and a third is refused;
   - a braced door still opens for Rook, and the bars slide with it;
   - the Hunter snaps the braces at 6 s and 12 s, both land on the floor, and the door breaks at 14.5 s.
-- `rocket` (13 checks):
+- `rocket` (20 checks):
   - firing with none crafted is refused;
   - a rocket flies down an empty corridor and explodes at the far end;
   - a guard takes exactly 60 damage;
-  - the Hunter is scrapped for the floor: +5000 (times the protocol multiplier), +3 scrap and an ammo drop.
-- `mine` (13 checks):
+  - the Hunter is scrapped for the floor: +5000 (times the protocol multiplier), +3 scrap and an ammo drop;
+  - effects: launch flash, smoke trail, fireball, shockwave ring and 10 debris chunks that come to rest; the camera shake scales with distance; every effect cleans itself up.
+- `mine` (22 checks):
   - a mine arms under Rook, and a second on the same tile is refused;
   - a guard stepping on one takes exactly 40 damage and uses it up;
   - the Hunter is stunned for 6 s;
-  - a second mine waits while the Hunter is stunned, then stuns it again once it walks on.
+  - a second mine waits while the Hunter is stunned, then stuns it again once it walks on;
+  - effects: the mine drops and lands, its red light blinks, it bursts (flash, ring, sparks), arcs crackle over a guard briefly and over the Hunter for the whole stun, and nothing is left behind.
 
 `--playtest-shots=DIR` (the folder must exist) saves a screenshot of each stage.
 
