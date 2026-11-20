@@ -142,7 +142,7 @@ Godot_v4.7-stable_mono_win64.exe --path .
 | `scripts/game_state.gd` | Autoload `Game`: score, lives, ammo, keys, stats, perks, Iron Scrip and upgrades (saved to `user://meta.cfg`) |
 | `scripts/level_gen.gd` | Procedural floor generator for runs |
 | `scripts/touch_controls.gd` | On-screen stick, buttons and menu buttons for phones |
-| `scripts/playtest.gd` | Automated in-game play tests (`--playtest=brace`) |
+| `scripts/playtest.gd` | Automated in-game play tests (`--playtest=brace|rocket|mine|all`) |
 | `scripts/gamepad_input.gd` | Gamepad support: menu buttons become key presses, hides the touch controls while a pad is in use |
 
 ## Art pipeline (Blender)
@@ -168,17 +168,29 @@ Automated play tests run inside the real game, print one `PLAYTEST PASS` or
 never touch the save.
 
 ```
-Godot_v4.7-stable_mono_win64_console.exe --path . -- --run --protocol=purge --seed=1 --no-save --no-pad --playtest=brace --playtest-shots=shots
+Godot_v4.7-stable_mono_win64_console.exe --path . -- --run --protocol=purge --seed=1 --no-save --no-pad --playtest=all --playtest-shots=shots
 ```
 
-- `brace` (`scripts/playtest.gd`, 20 checks):
+`--playtest=` takes `brace`, `rocket`, `mine` or `all` (46 checks). All of them live in `scripts/playtest.gd`:
+
+- `brace` (20 checks):
   - bracing with no door in front is refused and costs nothing;
   - a brace swings down, lands with sparks and settles flat;
   - a second brace fits, and a third is refused;
   - a braced door still opens for Rook, and the bars slide with it;
   - the Hunter snaps the braces at 6 s and 12 s, both land on the floor, and the door breaks at 14.5 s.
+- `rocket` (13 checks):
+  - firing with none crafted is refused;
+  - a rocket flies down an empty corridor and explodes at the far end;
+  - a guard takes exactly 60 damage;
+  - the Hunter is scrapped for the floor: +5000 (times the protocol multiplier), +3 scrap and an ammo drop.
+- `mine` (13 checks):
+  - a mine arms under Rook, and a second on the same tile is refused;
+  - a guard stepping on one takes exactly 40 damage and uses it up;
+  - the Hunter is stunned for 6 s;
+  - a second mine waits while the Hunter is stunned, then stuns it again once it walks on.
 
-  `--playtest-shots=DIR` (the folder must exist) saves a screenshot of each stage.
+`--playtest-shots=DIR` (the folder must exist) saves a screenshot of each stage.
 
 ## Debug options
 Pass these after `--`. `--tap=action@seconds,...` presses an input action once at a set time (for example `--tap=weapon_1@0.4,fire@0.7`). For example:
