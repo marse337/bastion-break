@@ -67,6 +67,7 @@ var start_angle := 0.0
 var boss: Enemy = null
 var projectiles: Array[Dictionary] = []
 var effects: Array[Dictionary] = []
+var brace_debris: Array[Dictionary] = []
 var exited := false
 var crimson: Enemy = null
 # Security terminal puzzle
@@ -660,6 +661,7 @@ func tick(delta: float) -> void:
 	_tick_mines()
 	_tick_projectiles(delta)
 	_tick_effects(delta)
+	_tick_brace_debris(delta)
 	if not player.dead:
 		_check_pickups()
 
@@ -1935,13 +1937,59 @@ func brace_door() -> String:
 		door = doors.get(player_tile())
 	if door == null:
 		return "Face a door to brace it"
-	var n: int = door.get_meta("braces", 0)
-	if n >= 2:
+	if not door.add_brace():
 		return "That door already has two braces"
-	door.set_meta("braces", n + 1)
+	if not door.brace_landed.is_connected(_on_brace_landed):
+		door.brace_landed.connect(_on_brace_landed)
 	play_sfx("brace", Vector2(door.tile.x + 0.5, door.tile.y + 0.5))
 	map_dirty = true
 	return ""
+
+
+## The bar slammed into its clamp: sparks and a clank.
+func _on_brace_landed(at: Vector3) -> void:
+	_spark(Vector2(at.x, at.z))
+	play_sfx("clank", Vector2(at.x, at.z))
+
+
+## The Hunter battered a brace loose: it snaps off and clatters to the floor,
+## thrown away from the Hunter.
+func snap_brace(door: Door, from: Vector2) -> void:
+	var node := door.pop_brace()
+	if node == null:
+		return
+	add_child(node)
+	var c := Vector2(door.tile.x + 0.5, door.tile.y + 0.5)
+	var away := (c - from).normalized()
+	var spin := Vector3(randf_range(-6, 6), randf_range(-3, 3), randf_range(-8, 8))
+	brace_debris.append({"node": node, "vel": Vector3(away.x * 2.2, 1.6, away.y * 2.2), "spin": spin, "t": 0.0})
+	_spark(c + away * 0.2)
+	_spark(c + away * 0.2 + Vector2(away.y, -away.x) * 0.4)
+	play_sfx("clank", c)
+	play_sfx("door_break", c)
+	Game.message.emit("A brace snapped!  %d left on that door" % door.brace_count())
+
+
+func _tick_brace_debris(delta: float) -> void:
+	for d in brace_debris.duplicate():
+		var node: Node3D = d.node
+		d.t += delta
+		if node.position.y > 0.06 or d.vel.y > 0.0:
+			d.vel.y -= 9.0 * delta
+			node.position += d.vel * delta
+			node.rotation += d.spin * delta
+			if node.position.y <= 0.06:
+				# Hit the floor: one small bounce, then lie flat.
+				node.position.y = 0.06
+				d.vel = Vector3(d.vel.x * 0.3, absf(d.vel.y) * 0.25 if absf(d.vel.y) > 2.0 else 0.0, d.vel.z * 0.3)
+				d.spin *= 0.3
+				node.rotation.x = 0.0
+				node.rotation.z = 0.0
+		if d.t > 6.0:
+			node.scale = Vector3.ONE * maxf(0.01, 1.0 - (d.t - 6.0) * 2.0)
+		if d.t > 6.5:
+			node.queue_free()
+			brace_debris.erase(d)
 
 
 ## Purge gadgets (R / F / B). Returns false if nothing happened.

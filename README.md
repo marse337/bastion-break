@@ -88,7 +88,7 @@ Godot_v4.7-stable_mono_win64.exe --path .
   |---|---|---|---|
   | Breach Rocket | 6 | R | Fired down the crosshair. A hit scraps the Hunter for the floor; the blast deals 60 damage to guards. |
   | Shock Mine | 3 | F | Dropped at your feet. When the Hunter comes within reach it's stunned for 6 seconds; a guard walking onto it takes 40 damage. |
-  | Door Brace | 2 | B | Clamps the door you face (two per door). Each brace makes the Hunter batter that door for 6 seconds longer. |
+  | Door Brace | 2 | B | Clamps the door you face (two per door). Each brace makes the Hunter batter that door for 6 seconds longer. The bar swings down onto its clamps with sparks, rattles while the Hunter pounds the door, and snaps off and clatters to the floor when it gives way (a snapped brace is gone for good). |
 
 ## Procedural floors (`scripts/level_gen.gd`)
 - **Rooms and doors:** binary space partitioning splits the map into rectangular rooms divided by 1-tile walls. Every split gets a door, so rooms connect only through doors, which block sound and Hounds. The Foundry adds extra loop doors.
@@ -142,6 +142,7 @@ Godot_v4.7-stable_mono_win64.exe --path .
 | `scripts/game_state.gd` | Autoload `Game`: score, lives, ammo, keys, stats, perks, Iron Scrip and upgrades (saved to `user://meta.cfg`) |
 | `scripts/level_gen.gd` | Procedural floor generator for runs |
 | `scripts/touch_controls.gd` | On-screen stick, buttons and menu buttons for phones |
+| `scripts/playtest.gd` | Automated in-game play tests (`--playtest=brace`) |
 | `scripts/gamepad_input.gd` | Gamepad support: menu buttons become key presses, hides the touch controls while a pad is in use |
 
 ## Art pipeline (Blender)
@@ -160,6 +161,24 @@ scripts and rendered with Eevee:
 Output goes to `assets/`. After re-rendering, open the project in Godot (or run
 `--headless --import`) to pick up the changes. If an asset is missing, the game
 falls back to its old procedural art.
+
+## Play tests
+Automated play tests run inside the real game, print one `PLAYTEST PASS` or
+`PLAYTEST FAIL` line per check, and exit with code 1 if anything failed. They
+never touch the save.
+
+```
+Godot_v4.7-stable_mono_win64_console.exe --path . -- --run --protocol=purge --seed=1 --no-save --no-pad --playtest=brace --playtest-shots=shots
+```
+
+- `brace` (`scripts/playtest.gd`, 20 checks):
+  - bracing with no door in front is refused and costs nothing;
+  - a brace swings down, lands with sparks and settles flat;
+  - a second brace fits, and a third is refused;
+  - a braced door still opens for Rook, and the bars slide with it;
+  - the Hunter snaps the braces at 6 s and 12 s, both land on the floor, and the door breaks at 14.5 s.
+
+  `--playtest-shots=DIR` (the folder must exist) saves a screenshot of each stage.
 
 ## Debug options
 Pass these after `--`. `--tap=action@seconds,...` presses an input action once at a set time (for example `--tap=weapon_1@0.4,fire@0.7`). For example:

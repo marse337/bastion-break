@@ -29,6 +29,8 @@ var bash_len := BASH_TIME
 var grab_t := 0.0
 var _step_t := 0.0
 var _bang_t := 0.0
+var _bash_braces := 0   # braces on the door when the battering started
+var _braces_broken := 0
 
 
 func setup_hunter(w, t: Vector2i) -> void:
@@ -125,7 +127,12 @@ func _bash(delta: float) -> void:
 	_frame("bash", 0 if _bang_t > 0.25 else 1)
 	if _bang_t <= 0.0:
 		_bang_t = 0.6
+		bash_door.bash_hit()
 		world.play_sfx("bash", Vector2(bash_door.tile.x + 0.5, bash_door.tile.y + 0.5))
+	# Each brace soaks up BRACE_TIME of battering, then snaps off.
+	while _braces_broken < _bash_braces and bash_len - bash_t >= BRACE_TIME * (_braces_broken + 1):
+		_braces_broken += 1
+		world.snap_brace(bash_door, pos)
 	if bash_t <= 0.0:
 		world.break_door(bash_door)
 		bash_door = null
@@ -137,7 +144,9 @@ func _march(delta: float) -> void:
 		if door != null and not door.passable():
 			# A closed door: open it if it would open anyway, otherwise batter it.
 			bash_door = door
-			bash_len = BASH_TIME + BRACE_TIME * door.get_meta("braces", 0)
+			_bash_braces = door.brace_count()
+			_braces_broken = 0
+			bash_len = BASH_TIME + BRACE_TIME * _bash_braces
 			bash_t = bash_len
 			_bang_t = 0.0
 			return

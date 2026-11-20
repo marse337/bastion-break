@@ -80,6 +80,11 @@ func _ready() -> void:
 	pad = GamepadInput.new()
 	pad.main = self
 	add_child(pad)
+	for a in _args:
+		if a.begins_with("--playtest="):
+			var pt := PlayTest.new()
+			pt.main = self
+			add_child(pt)
 
 	god_mode = "--god" in _args
 	if "--retro" in _args:
