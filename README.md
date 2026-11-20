@@ -142,7 +142,7 @@ Godot_v4.7-stable_mono_win64.exe --path .
 | `scripts/game_state.gd` | Autoload `Game`: score, lives, ammo, keys, stats, perks, Iron Scrip and upgrades (saved to `user://meta.cfg`) |
 | `scripts/level_gen.gd` | Procedural floor generator for runs |
 | `scripts/touch_controls.gd` | On-screen stick, buttons and menu buttons for phones |
-| `scripts/playtest.gd` | Automated in-game play tests (`--playtest=brace|rocket|mine|all`) |
+| `scripts/playtest.gd` | Automated in-game play tests (`--playtest=` brace, rocket, mine or all) |
 | `scripts/gamepad_input.gd` | Gamepad support: menu buttons become key presses, hides the touch controls while a pad is in use |
 
 ## Art pipeline (Blender)
